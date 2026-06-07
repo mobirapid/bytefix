@@ -1,0 +1,16 @@
+{
+  "name": "regear",
+  "version": "1.0.0",
+  "description": "ReGear — device repair & resale platform (catalog, pricing, quotes, orders)",
+  "type": "commonjs",
+  "main": "server.js",
+  "engines": { "node": ">=22.5" },
+  "scripts": {
+    "start": "node --experimental-sqlite server.js",
+    "seed": "node --experimental-sqlite db/seed.js",
+    "reset": "rm -f db/regear.db db/regear.db-wal db/regear.db-shm && node --experimental-sqlite db/seed.js && echo 'DB reset + seeded'"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}

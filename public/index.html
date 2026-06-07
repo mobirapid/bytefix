@@ -1,0 +1,598 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ReGear — Repair or sell your phone, laptop & gadgets</title>
+<meta name="description" content="Get your phone, laptop, tablet or smartwatch repaired at your doorstep, or sell it instantly for the best price. Free pickup, instant payment, 12-month warranty." />
+<meta name="keywords" content="phone repair, laptop repair, sell old phone, sell used laptop, doorstep repair, instant quote, recommerce" />
+<link rel="canonical" href="https://regear.in/" />
+<meta property="og:type" content="website" />
+<meta property="og:title" content="ReGear — Repair or sell your gadgets" />
+<meta property="og:description" content="Doorstep repairs and instant resale for phones, laptops, tablets & more. Free pickup, instant payment, 12-month warranty." />
+<meta property="og:site_name" content="ReGear" />
+<meta name="twitter:card" content="summary_large_image" />
+<link id="favicon" rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231B6B49'/%3E%3Crect x='11' y='11' width='10' height='10' rx='3' fill='%2316A06A'/%3E%3C/svg%3E" />
+<script id="ld" type="application/ld+json"></script>
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<header class="site"><div class="container nav">
+  <div id="backBtn" class="back" onclick="goBack()">←</div>
+  <div class="brand" id="brandMark" onclick="showHome()"><span class="dot"></span><span id="brandName">ReGear</span></div>
+  <div class="links">
+    <a onclick="showHome()" href="#how">How it works</a>
+    <a onclick="showHome()" href="#cats">Devices</a>
+    <a onclick="showHome()" href="#faq">FAQ</a>
+    <a onclick="showCorporate();return false;" href="#">For business</a>
+    <a onclick="openTrack();return false;" href="#">Track order</a>
+    <a id="svcLink" onclick="showService();return false;" href="#" style="display:none">Service Requests</a>
+  </div>
+  <div class="right">
+    <button class="city" id="cityChip" onclick="openCityModal()" aria-label="Choose your city">◷ <span id="city">Bengaluru</span> ▾</button>
+    <a id="staffLink" class="stafflink" onclick="staffLoginFlow();return false;" href="#">Staff</a>
+    <button class="cta authbtn" id="authBtn" onclick="authClick()">Log in</button>
+    <button class="cta signupbtn" id="signupBtn" onclick="signupClick()">Sign up</button>
+    <button class="cta green" onclick="scrollStart()">Get a quote</button>
+  </div>
+  <button class="burger" onclick="openTrack()">☰</button>
+</div></header>
+<div id="view"><div class="flowwrap center" style="color:var(--ink-soft)">Loading…</div></div>
+
+<div id="cityModal" class="modal-ov" onclick="if(event.target===this)closeCityModal()">
+  <div class="modal-box">
+    <div class="modal-head"><span>Choose your city</span><span class="modal-x" onclick="closeCityModal()">✕</span></div>
+    <input id="cmSearch" class="cm-search" placeholder="Search a city across India…" oninput="filterCity(this.value)">
+    <div class="cm-list"></div>
+  </div>
+</div>
+
+<script>
+const API='/api';
+const INR=n=>'₹'+Number(Math.round(n||0)).toLocaleString('en-IN');
+const SLOTS=['Today, 4–6 PM','Tomorrow, 10–12','Tomorrow, 2–4 PM','Sat, 11–1 PM','Sat, 5–7 PM','Sun, 12–2 PM'];
+const MODES=[['doorstep','🏠','Doorstep repair','Technician comes to you','Free'],['pickup','🚚','Pickup & drop','We collect, repair, return','Free'],['walkin','🏪','Store walk-in','Fastest turnaround','Free']];
+let CATALOG=[],CONDITIONS=[],SET={},S={},stack=[],mode='home',corpIntent='sell',STAT=[];
+/* DB-driven status helpers + colour badge (shared look with admin) */
+function flowSteps(flow){return STAT.filter(s=>s.flow===flow).slice().sort((a,b)=>a.sort-b.sort);}
+function statInfo(flow,key){return STAT.find(s=>s.flow===flow&&s.key===key)||{label:key,color:'orange'};}
+function badge(flow,key){const s=statInfo(flow,key);return `<span class="badge2 ${s.color}">${esc(s.label||key)}</span>`;}
+function hasPerm(p){return !!(ME&&ME.perms&&ME.perms.includes(p));}
+
+/* ---- Phase 1 helpers: countries, validation, location, city ---- */
+const val=id=>((document.getElementById(id)||{}).value||'').trim();
+const COUNTRIES=[['🇮🇳','+91'],['🇺🇸','+1'],['🇬🇧','+44'],['🇦🇪','+971'],['🇸🇬','+65'],['🇦🇺','+61'],['🇨🇦','+1'],['🇩🇪','+49'],['🇫🇷','+33'],['🇸🇦','+966']];
+function ccOptions(sel){sel=sel||'+91';return COUNTRIES.map(c=>`<option value="${c[1]}" ${c[1]===sel?'selected':''}>${c[0]} ${c[1]}</option>`).join('');}
+const EMAIL_RE=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+function fieldErr(el,msg){if(!el)return;el.classList.toggle('bad',!!msg);let e=el.querySelector('.err');if(msg){if(!e){e=document.createElement('div');e.className='err';el.appendChild(e);}e.textContent=msg;}else if(e)e.remove();}
+function setErr(id,msg){const f=document.getElementById(id);fieldErr(f&&f.closest('.field'),msg);}
+function clearErrs(){document.querySelectorAll('.field.bad').forEach(el=>fieldErr(el,''));}
+function useLocation(btnId,addrId){const btn=document.getElementById(btnId);if(!navigator.geolocation){alert('Location is not supported on this device.');return;}const orig=btn.innerHTML;btn.textContent='Locating…';btn.disabled=true;
+  navigator.geolocation.getCurrentPosition(async pos=>{
+    try{const la=pos.coords.latitude,lo=pos.coords.longitude;
+      const r=await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${la}&lon=${lo}`,{headers:{'Accept':'application/json'}});
+      const d=await r.json();const a=document.getElementById(addrId);
+      if(d&&d.display_name&&a){a.value=d.display_name;setErr(addrId,'');}
+      const ad=d&&d.address;const found=ad&&(ad.city||ad.town||ad.village||ad.state_district||ad.county);
+      if(found)setCity(found);
+    }catch(e){alert('Could not fetch your address automatically — please type it in.');}
+    finally{btn.innerHTML=orig;btn.disabled=false;}
+  },()=>{btn.innerHTML=orig;btn.disabled=false;alert('Location permission denied — please type your address.');},{enableHighAccuracy:true,timeout:10000});
+}
+let CITIES=['Bengaluru','Mumbai','Delhi','Hyderabad','Chennai','Pune','Kolkata','Ahmedabad','Jaipur','Surat','Lucknow','Chandigarh','Kochi','Indore','Nagpur','Coimbatore','Visakhapatnam','Bhopal','Patna','Gurugram','Noida','Mysuru','Vadodara','Thiruvananthapuram'];
+let CITY=''; try{CITY=localStorage.getItem('regear_city')||'';}catch(e){}
+function openCityModal(){const m=document.getElementById('cityModal');m.querySelector('.cm-list').innerHTML=CITIES.map(c=>`<div class="cm-item ${c===CITY?'on':''}" onclick="setCity('${c}')">${c}</div>`).join('');m.style.display='flex';const s=document.getElementById('cmSearch');s.value='';s.focus();}
+function closeCityModal(){document.getElementById('cityModal').style.display='none';}
+function filterCity(q){q=(q||'').toLowerCase();document.querySelectorAll('#cityModal .cm-item').forEach(el=>{el.style.display=el.textContent.toLowerCase().includes(q)?'':'none';});}
+function setCity(c){CITY=c;try{localStorage.setItem('regear_city',c);}catch(e){}const el=document.getElementById('city');if(el)el.textContent=c;closeCityModal();}
+
+/* ---- accounts (passwordless phone-OTP, Cashify-style) ---- */
+let SESSION='';try{SESSION=localStorage.getItem('regear_session')||'';}catch(e){}
+let ME=null;
+async function aapi(p,o={}){const r=await fetch(API+p,{headers:{'Content-Type':'application/json','Authorization':'Bearer '+SESSION},...o});if(!r.ok)throw new Error((await r.json().catch(()=>({}))).error||'Error');return r.json();}
+function setSession(tok,user){SESSION=tok;ME=user;try{localStorage.setItem('regear_session',tok);}catch(e){}syncAuth();if(mode==='home')renderMyOrders();}
+function clearSession(){SESSION='';ME=null;try{localStorage.removeItem('regear_session');}catch(e){}syncAuth();if(mode==='home')renderMyOrders();}
+function first(n){return String(n||'you').trim().split(' ')[0]||'you';}
+function syncAuth(){const b=document.getElementById('authBtn'),su=document.getElementById('signupBtn');if(b)b.textContent=ME?('Hi, '+first(ME.name)):'Log in';if(su)su.style.display=ME?'none':'';
+  const sv=document.getElementById('svcLink');if(sv)sv.style.display=hasPerm('service_requests')?'':'none';
+  const st=document.getElementById('staffLink');if(st)st.style.display=ME?'none':'';}
+function authClick(){if(ME){showProfile();return;}S.authMode='login';S.fromBooking=false;enterFlow(loginPhone);}
+function signupClick(){S.authMode='signup';S.fromBooking=false;enterFlow(loginPhone);}
+function loginPhone(){const su=S.authMode==='signup';return `<div class="step-h">${su?'Create your account':'Log in or sign up'}</div><p class="fsub">${su?'Sign up with Google, or use your phone number.':'Continue with Google, or get a one-time code on your phone.'}</p>
+  <div id="gsection"><div class="gwrap"><div id="gbtn"></div></div><div class="ordiv"><span>or use your phone</span></div></div>
+  <div class="field"><label>Mobile number</label><div class="ccrow"><select id="lg_cc" class="cc">${ccOptions(S.dial)}</select><input id="lg_phone" placeholder="10-digit mobile" inputmode="tel" value="${esc(S.phone||'')}"></div></div>
+  <div class="dock"><button class="btn green" id="lgbtn" onclick="loginSendOtp()">Send code →</button></div>`;}
+async function loginSendOtp(){clearErrs();S.dial=val('lg_cc')||'+91';S.phone=val('lg_phone');const d=S.phone.replace(/\D/g,'');if(d.length<(S.dial==='+91'?10:7)){setErr('lg_phone','Enter a valid mobile number');return;}
+  try{const r=await api('/otp/send',{method:'POST',body:JSON.stringify({phone:S.phone})});S.devCode=r.dev_code||'';S.fromBooking=false;nav(loginOtp);}catch(e){alert(e.message);}}
+function loginOtp(){return `<div class="step-h">Enter your code</div><p class="fsub">Sent to <b>${esc(S.phone)}</b>.</p>
+  ${S.devCode?`<div class="muted-card" style="color:var(--green)">Demo code: <b style="font-family:'JetBrains Mono'">${S.devCode}</b></div>`:''}
+  <div class="field"><label>One-time code</label><input id="lg_code" inputmode="numeric" maxlength="6" placeholder="––––––" style="letter-spacing:8px;text-align:center;font-family:'JetBrains Mono';font-size:22px"></div>
+  <div class="dock"><button class="btn green" id="lgvbtn" onclick="loginVerify()">Verify →</button><button class="btn btn-ghost" onclick="loginSendOtp()">Resend code</button></div>`;}
+async function loginVerify(){const code=val('lg_code');if(code.length<4)return alert('Enter the code');const btn=document.getElementById('lgvbtn');btn.textContent='Verifying…';btn.disabled=true;
+  try{const r=await api('/otp/verify',{method:'POST',body:JSON.stringify({phone:S.phone,code})});S.booking_token=r.token;
+    const a=await api('/account/resolve',{method:'POST',body:JSON.stringify({booking_token:S.booking_token})});
+    if(a.exists){const s=await api('/account/save',{method:'POST',body:JSON.stringify({booking_token:S.booking_token})});setSession(s.session,s.user);showProfile();}
+    else{nav(loginSignup);}
+  }catch(e){btn.disabled=false;btn.textContent='Verify →';alert(e.message);}}
+function loginSignup(){return `<div class="step-h">Create your account</div><p class="fsub">Just a couple of details to finish ${S.fromBooking?'your order':'signing up'}.</p>
+  <div class="field"><label>Full name</label><input id="su_name" placeholder="Your name" value="${esc(S.name||'')}"></div>
+  <div class="field"><label>Email</label><input id="su_email" type="email" placeholder="you@email.com" value="${esc(S.email||'')}"></div>
+  <label class="prefrow"><input type="checkbox" id="su_eu" checked> Email me updates about my orders</label>
+  <div class="dock"><button class="btn green" id="subtn" onclick="finishSignup()">${S.fromBooking?'Create account & continue →':'Create account →'}</button></div>`;}
+async function finishSignup(){clearErrs();const name=val('su_name'),email=val('su_email');let ok=true;if(name.length<2){setErr('su_name','Please enter your name');ok=false;}if(!EMAIL_RE.test(email)){setErr('su_email','Enter a valid email address');ok=false;}if(!ok)return;
+  const eu=document.getElementById('su_eu').checked;const btn=document.getElementById('subtn');btn.disabled=true;btn.textContent='Creating…';
+  try{const s=await api('/account/save',{method:'POST',body:JSON.stringify({booking_token:S.booking_token,name,email,city:CITY,email_updates:eu?1:0})});setSession(s.session,s.user);S.name=name;S.email=email;
+    if(S.fromBooking){await placeOrder();}else{showProfile();}
+  }catch(e){btn.disabled=false;btn.textContent='Create account →';alert(e.message);}}
+async function showProfile(){if(!SESSION){enterFlow(loginPhone);return;}mode='page';stack=[];syncHeader();
+  document.getElementById('view').innerHTML='<section class="block"><div class="container center" style="color:var(--ink-soft)">Loading your account…</div></section>';
+  let u,orders=[];try{u=(await aapi('/account/me')).user;ME=u;syncAuth();}catch(e){clearSession();showHome();return;}
+  try{orders=await aapi('/account/orders');}catch(e){}
+  const oh=orders.length?orders.map(o=>`<div class="prow"><span class="oref">${o.ref}</span><span class="badge ${o.type}">${o.type}</span><span class="odev">${esc(o.device_label||'')}</span><span class="oamt">${INR(o.amount)}</span><span class="ost">${esc(o.status)}</span><button class="cta ghost-cta" onclick="trackRef('${o.ref}')">Track</button></div>`).join(''):'<p style="color:var(--ink-soft);font-size:14px">No orders yet — your bookings will show up here.</p>';
+  document.getElementById('view').innerHTML=`<section class="block"><div class="container" style="max-width:740px">
+    <div class="kicker" style="text-align:left">Your account</div><h2 style="text-align:left">Hi, ${esc(String(u.name||'there').trim().split(' ')[0])}</h2>
+    <div class="form-card" style="margin-top:20px"><h3 class="pc-h">Profile & preferences</h3>
+      <div class="form-grid">
+        <div class="field" style="margin-top:0"><label>Full name</label><input id="p_name" value="${esc(u.name||'')}"></div>
+        <div class="field" style="margin-top:0"><label>Email</label><input id="p_email" type="email" value="${esc(u.email||'')}"></div>
+        <div class="field" style="margin-top:0"><label>Mobile</label>${u.phone?`<input value="${esc(u.phone)}" disabled>`:`<button class="locbtn" style="margin:0" onclick="enterFlow(addPhone)"><span>＋</span> Add your mobile number</button>`}</div>
+        <div class="field" style="margin-top:0"><label>Preferred city</label><input id="p_city" value="${esc(u.city||CITY||'')}"></div>
+      </div>
+      <label class="prefrow" style="margin-top:14px"><input type="checkbox" id="p_eu" ${u.email_updates?'checked':''}> Email me updates about my orders</label>
+      <div class="dock" style="margin-top:14px"><button class="btn green" onclick="saveProfile()">Save changes</button></div>
+    </div>
+    <div class="form-card" style="margin-top:18px"><h3 class="pc-h">Your orders</h3>${oh}</div>
+    <div style="margin-top:18px"><button class="btn btn-ghost" onclick="logout()">Log out</button></div>
+  </div></section>`+footerHTML();window.scrollTo({top:0});}
+async function saveProfile(){clearErrs();const name=val('p_name'),email=val('p_email'),city=val('p_city');let ok=true;if(name.length<2){setErr('p_name','Please enter your name');ok=false;}if(!EMAIL_RE.test(email)){setErr('p_email','Enter a valid email');ok=false;}if(!ok)return;
+  const eu=document.getElementById('p_eu').checked;
+  try{const m=await aapi('/account/me',{method:'PUT',body:JSON.stringify({name,email,city,email_updates:eu?1:0})});setSession(SESSION,m.user);toast('Saved');}catch(e){alert(e.message);}}
+async function logout(){try{await aapi('/account/logout',{method:'POST'});}catch(e){}clearSession();showHome();}
+function toast(msg){const t=document.createElement('div');t.className='toast';t.textContent=msg;document.body.appendChild(t);setTimeout(()=>{t.style.opacity='0';setTimeout(()=>t.remove(),300);},1600);}
+function loadGsi(){return new Promise(res=>{const ok=()=>window.google&&google.accounts&&google.accounts.id;if(ok())return res();let s=document.getElementById('gsi');if(!s){s=document.createElement('script');s.id='gsi';s.src='https://accounts.google.com/gsi/client';s.async=true;document.head.appendChild(s);}const iv=setInterval(()=>{if(ok()){clearInterval(iv);res();}},80);setTimeout(()=>{clearInterval(iv);res();},5000);});}
+function mountGoogleIfPresent(){const el=document.getElementById('gbtn');if(!el||el.dataset.done)return;const sec=document.getElementById('gsection');const cid=(SET.google_client_id||'').trim();
+  if(!cid){if(sec)sec.remove();return;}            // not configured → phone only
+  el.dataset.done='1';
+  const fail=msg=>{console.error('[Google sign-in]',msg);const w=el.closest('.gwrap');if(w)w.innerHTML='<div class="gnote">Google sign-in is unavailable right now — please use your phone below.</div>';};
+  console.info('[Google sign-in] If the button shows but clicking does nothing, add '+location.origin+' to "Authorized JavaScript origins" for this client ID in Google Cloud Console.');
+  loadGsi().then(()=>{
+    if(!(window.google&&google.accounts&&google.accounts.id)){fail('GIS library failed to load (offline, blocked, or CSP).');return;}
+    try{
+      google.accounts.id.initialize({client_id:cid,callback:onGoogleCredential,error_callback:e=>console.error('[Google sign-in]',(e&&e.type)||e)});
+      google.accounts.id.renderButton(el,{theme:'outline',size:'large',text:S.authMode==='signup'?'signup_with':'continue_with',shape:'pill',width:300});
+    }catch(e){fail((e&&e.message)||String(e));}
+  });
+}
+async function onGoogleCredential(resp){try{const r=await api('/account/google',{method:'POST',body:JSON.stringify({credential:resp.credential})});setSession(r.session,r.user);if(S.fromBooking){await placeOrder();}else{showProfile();}}catch(e){alert(e.message||'Google sign-in failed');}}
+const PIPE={repair:['placed','assigned','diagnosis','repairing','ready'],sell:['placed','agent','verified','paid','done']};
+const capId=s=>String(s||'').charAt(0).toUpperCase()+String(s||'').slice(1);
+async function renderMyOrders(){const el=document.getElementById('heroRight');if(!el)return;
+  if(!ME||!SESSION){el.innerHTML=heroArtHTML();return;}
+  let orders=[];try{orders=await aapi('/account/orders');}catch(e){el.innerHTML=heroArtHTML();return;}
+  if(!orders.length){el.innerHTML=heroArtHTML();return;}
+  const latest=orders.slice(0,3);
+  const cards=latest.map(o=>{const flow=flowSteps(o.type).map(s=>s.key);const idx=Math.max(0,flow.indexOf(o.status));const pct=flow.length?Math.round((idx+1)/flow.length*100):0;
+    return `<div class="hocard" onclick="trackRef('${o.ref}')" role="button" tabindex="0">
+      <div class="hocard-top"><span class="hocard-dev">${esc(o.device_label||'Your device')}</span><span class="badge ${o.type}">${o.type==='repair'?'Repair':'Sell'}</span></div>
+      <div class="hocard-bar"><span style="width:${pct}%"></span></div>
+      <div class="hocard-foot">${badge(o.type,o.status)}<span class="hocard-amt">${INR(o.amount)}</span></div>
+    </div>`;}).join('');
+  el.innerHTML=`<div class="hero-orders"><div class="ho-head"><b>Welcome back, ${esc(first(ME.name))}</b><span onclick="showProfile()">${orders.length>3?`All (${orders.length})`:'Account'}</span></div><div class="ho-sub">Your recent orders</div>${cards}</div>`;
+}
+/* add a verified mobile to a (e.g. Google) account */
+function addPhone(){return `<div class="step-h">Add your mobile</div><p class="fsub">Verify your number so your bookings appear in your account.</p>
+  <div class="field"><label>Mobile number</label><div class="ccrow"><select id="ap_cc" class="cc">${ccOptions(S.dial)}</select><input id="ap_phone" placeholder="10-digit mobile" inputmode="tel"></div></div>
+  <div class="dock"><button class="btn green" id="apbtn" onclick="addPhoneSend()">Send code →</button></div>`;}
+async function addPhoneSend(){clearErrs();S.dial=val('ap_cc')||'+91';S.phone=val('ap_phone');const d=S.phone.replace(/\D/g,'');if(d.length<(S.dial==='+91'?10:7)){setErr('ap_phone','Enter a valid mobile number');return;}try{const r=await api('/otp/send',{method:'POST',body:JSON.stringify({phone:S.phone})});S.devCode=r.dev_code||'';nav(addPhoneOtp);}catch(e){alert(e.message);}}
+function addPhoneOtp(){return `<div class="step-h">Enter your code</div><p class="fsub">Sent to <b>${esc(S.phone)}</b>.</p>${S.devCode?`<div class="muted-card" style="color:var(--green)">Demo code: <b style="font-family:'JetBrains Mono'">${S.devCode}</b></div>`:''}
+  <div class="field"><label>One-time code</label><input id="ap_code" inputmode="numeric" maxlength="6" placeholder="––––––" style="letter-spacing:8px;text-align:center;font-family:'JetBrains Mono';font-size:22px"></div>
+  <div class="dock"><button class="btn green" id="apvbtn" onclick="addPhoneVerify()">Verify →</button><button class="btn btn-ghost" onclick="addPhoneSend()">Resend code</button></div>`;}
+async function addPhoneVerify(){const code=val('ap_code');if(code.length<4)return alert('Enter the code');const btn=document.getElementById('apvbtn');btn.textContent='Verifying…';btn.disabled=true;
+  try{const r=await api('/otp/verify',{method:'POST',body:JSON.stringify({phone:S.phone,code})});const m=await aapi('/account/attach-phone',{method:'POST',body:JSON.stringify({booking_token:r.token})});ME=m.user;syncAuth();toast('Mobile added');showProfile();}
+  catch(e){btn.disabled=false;btn.textContent='Verify →';alert(e.message);}}
+async function api(p,o={}){const r=await fetch(API+p,{headers:{'Content-Type':'application/json'},...o});if(!r.ok)throw new Error((await r.json().catch(()=>({}))).error||'Error');return r.json();}
+const cat=id=>CATALOG.find(c=>c.id===id);
+const esc=s=>String(s==null?'':s).replace(/</g,'&lt;');
+const catEmoji=c=>(c&&(c.emoji||'').startsWith('data:'))?`<img src="${c.emoji}" alt="" style="height:1em;width:auto;vertical-align:-.15em">`:((c&&c.emoji)||'📦');
+
+async function boot(){
+  try{[CATALOG,CONDITIONS,SET,STAT]=await Promise.all([api('/catalog'),api('/conditions'),api('/settings'),api('/service/order-statuses')]);}
+  catch(e){document.getElementById('view').innerHTML='<div class="flowwrap center">Could not reach server. Run <b>npm start</b>.</div>';return;}
+  applyBranding();showHome();
+}
+function applyBranding(){
+  const bn=SET.brand_name||'ReGear';
+  document.getElementById('brandName').textContent=bn;
+  if(SET.cities){const a=SET.cities.split(/[\n,]+/).map(x=>x.trim()).filter(Boolean);if(a.length)CITIES=a;}
+  document.getElementById('city').textContent=CITY||SET.city||'Bengaluru';
+  syncAuth();if(SESSION){aapi('/account/me').then(m=>{ME=m.user;syncAuth();if(mode==='home')renderMyOrders();}).catch(()=>clearSession());}
+  document.title=bn+' — Repair or sell your phone, laptop & gadgets';
+  if(SET.meta_description){let m=document.querySelector('meta[name=description]');if(m)m.content=SET.meta_description;}
+  // logo
+  if(SET.logo){document.getElementById('brandMark').innerHTML='<img src="'+SET.logo+'" alt="'+esc(bn)+'">';}
+  // favicon
+  if(SET.favicon){document.getElementById('favicon').href=SET.favicon;}
+  // JSON-LD local business
+  document.getElementById('ld').textContent=JSON.stringify({"@context":"https://schema.org","@type":"LocalBusiness",name:bn,description:SET.meta_description||"Doorstep device repair and instant resale.",areaServed:SET.city||"Bengaluru",telephone:SET.phone||"",email:SET.email||"",address:SET.address||""});
+}
+
+/* ---------------- HOME (marketing) ---------------- */
+function showHome(){
+  mode='home';stack=[];syncHeader();
+  const v=document.getElementById('view');
+  v.innerHTML=marqueeHTML()+heroHTML()+howHTML()+catsHTML()+featHTML()+statsHTML()+testiHTML()+corpBandHTML()+faqHTML()+ctaHTML()+footerHTML();
+  renderMyOrders();
+  window.scrollTo({top:0});
+}
+function syncHeader(){document.getElementById('backBtn').style.display=mode==='flow'?'grid':'none';}
+function scrollStart(){if(mode!=='home')showHome();setTimeout(()=>document.getElementById('start')?.scrollIntoView({behavior:'smooth'}),60);}
+
+function marqueeHTML(){
+  const items=[
+    'Certified technicians · genuine parts on every repair',
+    'Up to <b>12-month</b> warranty on all repairs',
+    'Transparent upfront pricing — <b>zero</b> hidden charges',
+    'Free doorstep pickup &amp; diagnosis',
+    'Most phone repairs done in <b>30 min</b>',
+    'Best market price for your device — paid instantly',
+    'Secure, certified data wipe on every device',
+    'Trusted by <b>30,000+</b> happy customers',
+  ];
+  const sep='<span class="sep">•</span>';
+  // one full run, duplicated so the loop scrolls seamlessly
+  const run='<span class="pulse" style="display:inline-block;vertical-align:middle;margin-right:9px"></span>'
+            +items.join(sep)+sep;
+  return `<div class="marquee" aria-label="Why choose us"><span>${run}${run}</span></div>`;
+}
+function heroHTML(){return `<section class="hero"><div class="container"><div class="hero-grid">
+  <div>
+    <div class="tagpill"><span class="pulse"></span> Doorstep service · Instant payouts · 12-mo warranty</div>
+    <h1 id="start">Broken or<br>bored of it? <span class="hl">Sorted.</span></h1>
+    <p class="sub">Repair your phone, laptop or tablet at your door — or sell it in minutes for the best price.</p>
+    <div class="hero-cta">
+      <div class="bigbtn fix" onclick="startFix()"><div class="ic">🛠️</div><div class="tx"><b>Fix my device</b><span>Transparent upfront quote</span></div><span class="go">→</span></div>
+      <div class="bigbtn sell" onclick="startSell()"><div class="ic">💸</div><div class="tx"><b>Sell my device</b><span>Instant price · free pickup</span></div><span class="go">→</span></div>
+    </div>
+    <div class="hero-stats"><div class="s"><b>4.7★</b><span>30k+ customers</span></div><div class="s"><b>30 min</b><span>avg phone repair</span></div><div class="s"><b>₹0</b><span>pickup & diagnosis</span></div></div>
+  </div>
+  <div id="heroRight" class="hero-right">${heroArtHTML()}</div>
+</div></div></section>`;}
+function heroArtHTML(){return `<div class="hero-art">
+    <div class="blob" style="width:200px;height:200px;background:#fff;top:-40px;right:-30px"></div>
+    <div class="blob" style="width:160px;height:160px;background:#0b2545;bottom:-30px;left:-20px"></div>
+    <div class="device">📱</div>
+    <div class="badge-fl" style="top:28px;left:24px">⚡ Instant quote<span>in 60 seconds</span></div>
+    <div class="badge-fl" style="bottom:28px;right:24px">🛡️ 12-mo warranty<span>parts & labour</span></div>
+  </div>`;}
+
+function howHTML(){const steps=[['01','📝','Tell us about it','Pick your device and what you need — a repair or a sale.'],['02','🔍','Get a quote','See a transparent price instantly. Free diagnosis for repairs.'],['03','🚪','Doorstep done','We come to you. Repaired on the spot, or paid instantly on pickup.']];
+  return `<section class="block" id="how"><div class="container"><div class="kicker">How it works</div><h2>Three steps. Zero hassle.</h2>
+  <div class="steps">${steps.map((s,i)=>`<div class="step"><span class="n">Step - ${i+1}</span><div class="e">${s[1]}</div><h3>${s[2]}</h3><p>${s[3]}</p></div>`).join('')}</div></div></section>`;}
+
+function catsHTML(){return `<section class="block" id="cats" style="background:var(--paper-2)"><div class="container"><div class="kicker">What we handle</div><h2>Every gadget, covered.</h2><p class="lead">Tap a device to fix it or get an instant resale quote.</p>
+  <div class="cat-grid">${CATALOG.map(c=>`<div class="cat-card" onclick="startCat(${c.id})"><span class="e">${catEmoji(c)}</span><b>${esc(c.name)}</b><span>${c.brands.reduce((s,b)=>s+b.models.length,0)} models</span></div>`).join('')}</div></div></section>`;}
+
+function featHTML(){const f=[['🏠','Doorstep everything','Repairs and pickups at your home or office, at a slot you choose.'],['💸','Best price, instantly','Fair, transparent quotes with no lowball surprises at the door.'],['🛡️','12-month warranty','Every repair is backed by a year-long warranty on parts and labour.'],['🔒','Data wiped securely','Certified data erasure on every device you sell — done in front of you.'],['⚡','Same-day service','Most phone repairs in 30 minutes; same-day pickup slots available.'],['✅','Genuine parts','Quality-checked components and trained, verified technicians.']];
+  return `<section class="block"><div class="container"><div class="kicker">Why ReGear</div><h2>Built on trust.</h2>
+  <div class="feat-grid">${f.map(x=>`<div class="feat"><div class="e">${x[0]}</div><h3>${x[1]}</h3><p>${x[2]}</p></div>`).join('')}</div></div></section>`;}
+
+function statsHTML(){return `<section class="block" style="padding-top:0"><div class="container"><div class="tband">
+  <div class="t"><b>30k+</b><span>Happy customers</span></div><div class="t"><b>4.7★</b><span>Average rating</span></div><div class="t"><b>500+</b><span>Models supported</span></div><div class="t"><b>30min</b><span>Avg repair time</span></div></div></div></section>`;}
+
+function testiHTML(){const t=[['Screen looked brand new and the technician came the same evening. Painless.','Ananya · iPhone 14'],['Sold my old MacBook in 20 minutes, money in my UPI before they left.','Rohit · MacBook Air'],['Quote matched exactly what I paid. No haggling at the door — refreshing.','Meera · OnePlus 11']];
+  return `<section class="block" style="background:var(--paper-2)"><div class="container"><div class="kicker">Loved locally</div><h2>What customers say.</h2>
+  <div class="testi-grid">${t.map(x=>`<div class="testi"><div class="stars">★★★★★</div><p>“${x[0]}”</p><div class="who">${x[1].split(' · ')[0]}<span>${x[1].split(' · ')[1]}</span></div></div>`).join('')}</div></div></section>`;}
+
+function faqHTML(){const qs=[['Is the diagnosis really free?','Yes. For repairs, our technician inspects the device at no cost and you only pay if you approve the final quote.'],['How do you decide the resale price?','We start from a fair market value for your exact model, then adjust for its condition based on the questions you answer. The price is locked for 48 hours.'],['When do I get paid for a sale?','Instantly — via UPI or bank transfer the moment our agent verifies the device at pickup.'],['Do repairs come with a warranty?','Every repair carries a 12-month warranty covering both parts and labour.']];
+  return `<section class="block" id="faq"><div class="container"><div class="kicker">FAQ</div><h2>Good questions.</h2>
+  <div class="faq">${qs.map(q=>`<details class="qa"><summary>${q[0]}</summary><div class="a">${q[1]}</div></details>`).join('')}</div></div></section>`;}
+
+function ctaHTML(){return `<section class="block" style="padding-top:0"><div class="container"><div class="ctaband"><h2>Your gadget deserves better.</h2><p>Whether it needs fixing or it's time to let go — get a price in under a minute.</p>
+  <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap"><button class="cta" onclick="startFix()">🛠️ Fix a device</button><button class="cta" onclick="startSell()">💸 Sell a device</button></div></div></div></section>`;}
+
+function footerHTML(){const bn=SET.brand_name||'ReGear';return `<footer class="site"><div class="container"><div class="foot-grid">
+  <div><div class="brand" style="font-size:22px">${SET.logo?`<img src="${SET.logo}" alt="${esc(bn)}" style="height:30px">`:`<span class="dot"></span>${esc(bn)}`}</div>
+    <p class="tg">Doorstep device repair and instant resale for ${esc(SET.city||'your city')}.</p>
+    <div class="socials"><a href="#" aria-label="Instagram">◎</a><a href="#" aria-label="Twitter">✕</a><a href="#" aria-label="Facebook">f</a><a href="#" aria-label="WhatsApp">✆</a></div>
+  </div>
+  <div><h4>Services</h4><ul><li><a class="li" onclick="startFix()">Fix a device</a></li><li><a class="li" onclick="startSell()">Sell a device</a></li><li><a class="li" onclick="showCorporate()">For business</a></li><li><a class="li" onclick="openTrack()">Track order</a></li></ul></div>
+  <div><h4>Devices</h4><ul>${CATALOG.slice(0,5).map(c=>`<li><a class="li" onclick="startCat(${c.id})">${esc(c.name)}</a></li>`).join('')}</ul></div>
+  <div class="foot-contact"><h4>Get in touch</h4>
+    <div>✆ ${esc(SET.phone||'+91 94038 90334')}</div>
+    <div>✉ ${esc(SET.email||'hello@regear.in')}</div>
+    <div>⌂ ${esc(SET.address||'HSR Layout, '+(SET.city||'Bengaluru'))}</div>
+  </div>
+</div><div class="foot-bottom"><span>© ${new Date().getFullYear()} ${esc(bn)}. All rights reserved.</span><span>Privacy · Terms · Refunds</span></div></div></footer>`;}
+
+/* ---------------- CORPORATE (B2B) ---------------- */
+function corpBandHTML(){return `<section class="block" style="padding-top:0"><div class="container"><div class="corp-band">
+  <div><div class="kicker" style="text-align:left;color:var(--green-bright);margin-bottom:8px">For business</div><h3>Got a fleet to sell — or to buy?</h3><p>Bulk asset recovery and refurbished procurement for companies, with certified data wiping and GST invoicing.</p></div>
+  <button class="cta" onclick="showCorporate()">Talk to our team →</button></div></div></section>`;}
+
+function showCorporate(){mode='page';stack=[];syncHeader();const v=document.getElementById('view');v.innerHTML=corporateHTML()+footerHTML();window.scrollTo({top:0});}
+function setCorpIntent(i){corpIntent=i;const keep={};['c_company','c_name','c_email','c_phone','c_qty','c_types','c_msg'].forEach(id=>{const el=document.getElementById(id);if(el)keep[id]=el.value;});showCorporate();Object.entries(keep).forEach(([id,v])=>{const el=document.getElementById(id);if(el)el.value=v;});}
+function corporateHTML(){
+  const sell=corpIntent==='sell';
+  const benefits=sell
+    ?[['💼','Asset recovery','Turn retired laptops, phones & tablets into cash with a single pickup.'],['🔒','Certified data wiping','Audited erasure with certificates for your compliance records.'],['🧾','GST invoicing','Proper tax invoices and documentation for your finance team.'],['🚚','Bulk doorstep pickup','Scheduled collection across one or many office locations.']]
+    :[['💻','Bulk procurement','Refurbished phones & laptops at scale, every unit quality-graded.'],['🛡️','Warranty included','Each refurbished device is covered, with fast replacement support.'],['🧾','GST invoicing','Compliant invoices for procurement and accounting.'],['⚙️','Custom configs','Specify models, specs and quantities — we source to match.']];
+  return `<section class="block"><div class="container">
+    <div class="center"><div class="kicker">For business</div><h2>Recommerce, at company scale.</h2><p class="lead">Sell your retired fleet or buy quality-graded refurbished devices in bulk — with data security, GST invoicing and a dedicated account manager.</p></div>
+    <div class="center" style="margin-top:26px"><div class="toggle"><button id="corpSell" class="${sell?'on':''}" onclick="setCorpIntent('sell')">Sell in bulk</button><button id="corpBuy" class="buy ${sell?'':'on'}" onclick="setCorpIntent('buy')">Buy in bulk</button></div></div>
+    <div class="feat-grid" id="corpBenefits" style="margin-top:26px">${benefits.map(x=>`<div class="feat"><div class="e">${x[0]}</div><h3>${x[1]}</h3><p>${x[2]}</p></div>`).join('')}</div>
+    <div style="display:flex;justify-content:center;margin-top:40px"><div class="form-card">
+      <h3 style="font-family:'Bricolage Grotesque';font-size:22px;margin-bottom:4px">${sell?'Request a bulk sell quote':'Request a procurement quote'}</h3>
+      <p style="color:var(--ink-soft);font-size:13.5px;margin-bottom:18px">Tell us about your requirement — our corporate team replies within one business day.</p>
+      <div class="form-grid">
+        <div class="field full" style="margin-top:0"><label>Company name *</label><input id="c_company" placeholder="Acme Pvt Ltd"></div>
+        <div class="field" style="margin-top:0"><label>Contact person</label><input id="c_name" placeholder="Your name"></div>
+        <div class="field" style="margin-top:0"><label>Work email</label><input id="c_email" placeholder="you@company.com"></div>
+        <div class="field" style="margin-top:0"><label>Phone</label><div class="ccrow"><select id="c_cc" class="cc">${ccOptions()}</select><input id="c_phone" placeholder="Mobile" inputmode="tel"></div></div>
+        <div class="field" style="margin-top:0"><label>Approx. quantity</label><input id="c_qty" type="number" placeholder="e.g. 50"></div>
+        <div class="field full" style="margin-top:0"><label>Device types</label><input id="c_types" placeholder="e.g. laptops, iPhones, monitors"></div>
+        <div class="field full" style="margin-top:0"><label>Message</label><textarea id="c_msg" rows="3" placeholder="Anything else we should know?"></textarea></div>
+      </div>
+      <button class="btn ${sell?'green':'amber'}" id="cbtn2" style="margin-top:18px" onclick="submitCorp()">${sell?'Request sell quote':'Request procurement quote'}</button>
+    </div></div>
+  </div></section>`;
+}
+async function submitCorp(){
+  clearErrs();
+  const company=val('c_company'),email=val('c_email'),phone=val('c_phone');
+  let ok=true;
+  if(company.length<2){setErr('c_company','Please enter your company name');ok=false;}
+  if(email&&!EMAIL_RE.test(email)){setErr('c_email','Enter a valid email address');ok=false;}
+  if(!email&&!phone){setErr('c_email','Add a work email or phone');setErr('c_phone','Add a work email or phone');ok=false;}
+  if(!ok)return;
+  const btn=document.getElementById('cbtn2');btn.textContent='Sending…';btn.disabled=true;
+  try{
+    const r=await api('/corporate',{method:'POST',body:JSON.stringify({intent:corpIntent,company,contact_name:(document.getElementById('c_name')||{}).value||'',email,phone,device_types:(document.getElementById('c_types')||{}).value||'',quantity:+((document.getElementById('c_qty')||{}).value)||null,message:(document.getElementById('c_msg')||{}).value||''})});
+    document.getElementById('view').innerHTML=`<section class="block"><div class="container center"><div class="tick">✓</div><h2>Request received</h2><p class="lead">Thanks — our corporate team will reach out within one business day. Your reference is <b>${r.ref}</b>.</p><button class="cta green" style="margin-top:22px" onclick="showHome()">Back to home</button></div></section>`+footerHTML();
+    window.scrollTo({top:0});
+  }catch(e){btn.textContent='Try again';btn.disabled=false;alert('Could not send: '+e.message);}
+}
+
+/* ---------------- FLOW ---------------- */
+function freshS(extra){const s=Object.assign({},extra);if(ME){if(ME.name)s.name=ME.name;if(ME.email)s.email=ME.email;if(ME.phone)s.phone=ME.phone;}return s;}
+function startFix(){S=freshS({mode:'fix',issues:[]});enterFlow(pickCat);}
+function startSell(){S=freshS({mode:'sell',answers:{},qi:0});enterFlow(pickCat);}
+function startCat(id){S=freshS({cat:id});enterFlow(choosePurpose);}
+function enterFlow(fn){mode='flow';stack=[fn];syncHeader();renderFlow();}
+function nav(fn){stack.push(fn);renderFlow();}
+function goBack(){if(mode!=='flow')return;if(stack.length>1){stack.pop();renderFlow();}else showHome();}
+async function renderFlow(){
+  const v=document.getElementById('view');syncHeader();
+  v.innerHTML='<div class="flowwrap center" style="color:var(--ink-soft)">…</div>';
+  const body=await stack[stack.length-1]();
+  v.innerHTML='<div class="flowwrap"><div class="flow-back" onclick="goBack()">← Back</div>'+body+'</div>';
+  if(typeof mountGoogleIfPresent==='function')mountGoogleIfPresent();
+  window.scrollTo({top:0});
+}
+function prog(n){let s='';for(let i=0;i<5;i++)s+=`<i class="${i<n?'on':''}"></i>`;return `<div class="prog">${s}</div>`;}
+
+function choosePurpose(){const c=cat(S.cat);return `<div class="eyebrow">${esc(c.name)}</div><div class="step-h">Fix it or sell it?</div><p class="fsub">What would you like to do with your ${esc(c.name.toLowerCase())}?</p>
+  <div class="list"><div class="row" onclick="S.mode='fix';S.issues=[];nav(pickBrand)"><span class="em">🛠️</span><div class="meta"><b>Repair it</b><span>Book a doorstep repair with a transparent quote</span></div><span class="chev">→</span></div>
+  <div class="row" onclick="S.mode='sell';S.answers={};S.qi=0;nav(pickBrand)"><span class="em">💸</span><div class="meta"><b>Sell it</b><span>Get an instant price and free pickup</span></div><span class="chev">→</span></div></div>`;}
+function pickCat(){return prog(1)+`<div class="eyebrow">${S.mode==='fix'?'Repair':'Sell'} · Step 1</div><div class="step-h">What kind of device?</div>
+  <div class="grid2">${CATALOG.map(c=>`<div class="tile" onclick="S.cat=${c.id};nav(pickBrand)"><span class="em">${catEmoji(c)}</span>${esc(c.name)}</div>`).join('')}</div>`;}
+function pickBrand(){const c=cat(S.cat);return prog(2)+`<div class="eyebrow">${esc(c.name)}</div><div class="step-h">Pick the brand</div>
+  <div class="grid2">${c.brands.map(b=>`<div class="tile brand" onclick="S.brand=${b.id};nav(pickModel)">${esc(b.name)}</div>`).join('')}</div>`;}
+function pickModel(){const c=cat(S.cat);const b=c.brands.find(x=>x.id===S.brand);return prog(3)+`<div class="eyebrow">${esc(b.name)} ${esc(c.name)}</div><div class="step-h">Which model?</div>
+  <div class="list">${b.models.map(m=>`<div class="row" onclick="S.model=${m.id};S.modelName='${m.name.replace(/'/g,'')}';S.base=${m.base_value};nav(${S.mode==='fix'?'pickIssues':'condition'})"><span class="em">${catEmoji(c)}</span><div class="meta"><b>${esc(m.name)}</b><span>${S.mode==='sell'?'Up to '+INR(m.base_value):'Tap to select issues'}</span></div><span class="chev">→</span></div>`).join('')}</div>`;}
+function devStrip(){const c=cat(S.cat);const b=c.brands.find(x=>x.id===S.brand);return `<div class="selected-device"><span class="em">${catEmoji(c)}</span><div><b>${esc(b.name)} ${esc(S.modelName)}</b><span>${esc(c.name)}</span></div><span class="edit" onclick="while(stack[stack.length-1]!==pickModel&&stack.length>1)stack.pop();renderFlow()">change</span></div>`;}
+
+async function pickIssues(){S.issueList=(await api('/models/'+S.model+'/repair-issues')).filter(it=>it.applies);
+  return prog(4)+devStrip()+`<div class="step-h">What's wrong?</div><p class="fsub">Select all that apply. Final price confirmed after free diagnosis.</p>
+  <div class="list">${S.issueList.length?S.issueList.map(it=>{const sel=S.issues.includes(it.issue_id);return `<div class="opt ${sel?'sel':''}" onclick="togIssue(${it.issue_id})"><div class="check">✓</div><div class="meta"><b>${esc(it.name)}</b><span>ETA ${esc(it.eta)}</span></div><span class="price">${INR(it.price)}</span></div>`;}).join(''):`<div class="muted-card">No repair options are listed for this model yet — please use “Track order” help or contact us and we’ll assist.</div>`}</div>
+  <div class="dock"><button class="btn green" ${S.issues.length?'':'disabled'} onclick="nav(pickMode)">Choose service ${S.issues.length?`<span class="pill">${S.issues.length}</span>`:''}</button></div>`;}
+function togIssue(id){const k=S.issues.indexOf(id);if(k>=0)S.issues.splice(k,1);else S.issues.push(id);renderFlow();}
+function pickMode(){if(!S.svc)S.svc='doorstep';return prog(5)+devStrip()+`<div class="step-h">How do you want it done?</div>
+  <div class="modes">${MODES.map(m=>`<div class="mode ${S.svc===m[0]?'sel':''}" onclick="S.svc='${m[0]}';renderFlow()"><span class="em">${m[1]}</span><div class="meta"><b>${m[2]}</b><span>${m[3]}</span></div><span class="tag">${m[4]}</span></div>`).join('')}</div>
+  <div class="dock"><button class="btn green" onclick="nav(fixQuote)">See my quote →</button></div>`;}
+async function fixQuote(){const q=await api('/quotes/repair',{method:'POST',body:JSON.stringify({model_id:S.model,issue_ids:S.issues})});S.amount=q.total;S.quote=q;
+  return devStrip()+`<div class="eyebrow">Estimated quote</div><div class="step-h">Your repair estimate</div>
+  <div class="quote">${q.items.map(p=>`<div class="qrow"><span>${esc(p.name)}</span><b>${INR(p.price)}</b></div>`).join('')}<div class="qrow"><span>GST (${q.gst_percent}%)</span><b>${INR(q.gst)}</b></div><div class="qrow"><span>${MODES.find(m=>m[0]===S.svc)[2]}</span><b style="color:var(--green)">Free</b></div><div class="qrow tot"><span>Estimated total</span><b>${INR(q.total)}</b></div></div>
+  <div class="muted-card">🛡️ 12-month warranty on parts & labour. You approve the final price after a free diagnosis.</div>
+  <div class="dock"><button class="btn green" onclick="nav(schedule)">Book this repair →</button></div>`;}
+function condition(){const cur=CONDITIONS[S.qi];return prog(4)+devStrip()+`<div class="eyebrow">Condition · ${S.qi+1} of ${CONDITIONS.length}</div><div class="step-h">${esc(cur.name)}</div>
+  <div class="list" style="margin-top:14px">${cur.options.map(o=>`<div class="opt" onclick="answer(${cur.id},${o.id})"><div class="check">✓</div><div class="meta"><b>${esc(o.label)}</b></div></div>`).join('')}</div>
+  <p class="note">Honest answers = an accurate quote. We verify at pickup before paying.</p>`;}
+function answer(gid,oid){S.answers[gid]=oid;if(S.qi<CONDITIONS.length-1){S.qi++;renderFlow();}else nav(sellQuote);}
+function condSummary(){return CONDITIONS.map(g=>{const oid=S.answers[g.id];const o=(g.options||[]).find(x=>x.id===oid);return o?{q:g.name,a:o.label,factor:o.factor}:null;}).filter(Boolean);}
+async function sellQuote(){const q=await api('/quotes/sell',{method:'POST',body:JSON.stringify({model_id:S.model,answers:S.answers})});S.amount=q.payout;S.quote=q;
+  return devStrip()+`<div class="center"><div class="eyebrow">Your instant quote</div></div>
+  <div class="estimate-card"><div style="font-size:13px;color:var(--ink-soft);font-weight:600">We'll pay you up to</div><div class="big-price amber">${INR(q.payout)}</div><div style="font-size:13px;color:var(--ink-soft)">Locked for 48 hrs · paid at pickup</div></div>
+  <div class="eyebrow" style="margin-top:22px">Based on your answers<span style="float:right;color:var(--green);cursor:pointer;font-weight:600;text-transform:none;letter-spacing:0" onclick="S.qi=0;nav(condition)">Edit</span></div>
+  <div class="list">${condSummary().map(s=>`<div class="row" style="cursor:default"><span class="em">✓</span><div class="meta"><span>${esc(s.q)}</span><b>${esc(s.a)}</b></div></div>`).join('')}</div>
+  <div class="list" style="margin-top:20px"><div class="row" style="cursor:default"><span class="em">⚡</span><div class="meta"><b>Instant payment</b><span>UPI / bank transfer on collection</span></div></div><div class="row" style="cursor:default"><span class="em">🚚</span><div class="meta"><b>Free doorstep pickup</b><span>Same-day slots in ${esc(SET.city||'your city')}</span></div></div><div class="row" style="cursor:default"><span class="em">🔒</span><div class="meta"><b>Data wiped securely</b><span>Certified erasure in front of you</span></div></div></div>
+  <div class="dock"><button class="btn amber" onclick="nav(schedule)">Sell it · schedule pickup →</button></div>`;}
+function schedule(){const fix=S.mode==='fix';return `<div class="step-h">${fix?'Where & when?':'Pickup details'}</div><p class="fsub">${fix?'Our technician arrives at your slot.':'We collect & pay at this slot.'}</p>
+  <div class="field"><label>Full name</label><input id="f_name" placeholder="e.g. Aarav Sharma" value="${esc(S.name||'')}"></div>
+  <div class="field"><label>Mobile number</label><div class="ccrow"><select id="f_cc" class="cc">${ccOptions(S.dial)}</select><input id="f_phone" placeholder="10-digit mobile" inputmode="tel" value="${esc(S.phone||'')}"></div></div>
+  <div class="field"><label>Email (for order updates)</label><input id="f_email" type="email" placeholder="you@email.com" value="${esc(S.email||'')}"></div>
+  <div class="field"><label>Address</label><button type="button" class="locbtn" id="locBtn" onclick="useLocation('locBtn','f_addr')"><span>📍</span> Use my current location</button><textarea id="f_addr" rows="2" placeholder="Flat, street, area, city, pincode">${esc(S.address||'')}</textarea></div>
+  <div class="field" id="slotField"><label>Pick a slot</label><div class="slots">${SLOTS.map((s,i)=>`<div class="slot ${S.slot===s?'sel':''}" id="sl${i}" onclick="selSlot(${i})">${s}</div>`).join('')}</div></div>
+  <div class="dock"><button class="btn ${fix?'green':'amber'}" id="cbtn" onclick="startOtp()">Continue to verify →</button><p class="note">We'll text a one-time code to confirm your number.</p></div>`;}
+function selSlot(i){S.slot=SLOTS[i];document.querySelectorAll('.slot').forEach(s=>s.classList.remove('sel'));document.getElementById('sl'+i).classList.add('sel');fieldErr(document.getElementById('slotField'),'');}
+function startOtp(){
+  clearErrs();
+  S.name=val('f_name');S.dial=val('f_cc')||'+91';S.phone=val('f_phone');S.email=val('f_email');S.address=val('f_addr');
+  let ok=true;
+  if(S.name.length<2){setErr('f_name','Please enter your name');ok=false;}
+  const digits=S.phone.replace(/\D/g,'');const minLen=S.dial==='+91'?10:7;
+  if(digits.length<minLen){setErr('f_phone','Enter a valid mobile number');ok=false;}
+  if(!EMAIL_RE.test(S.email)){setErr('f_email','Enter a valid email address');ok=false;}
+  if(S.address.length<8){setErr('f_addr','Please enter your full address');ok=false;}
+  if(!S.slot){fieldErr(document.getElementById('slotField'),'Please pick a slot');ok=false;}
+  if(!ok)return;
+  sendOtp(true);
+}
+/* OTP — fully backend-owned (routes/otp.js). To send real SMS later, plug a
+   provider into deliver() in that file; no frontend change needed. */
+async function sendOtp(advance){
+  try{const r=await api('/otp/send',{method:'POST',body:JSON.stringify({phone:S.phone})});S.devCode=r.dev_code||'';S.otpMsg=advance?'':'A new code has been sent';if(advance)nav(otpScreen);else renderFlow();}
+  catch(e){alert(e.message);}
+}
+async function verifyOtp(){
+  const code=((document.getElementById('otp_code')||{}).value||'').trim();
+  if(code.length<4)return alert('Enter the code');
+  const btn=document.getElementById('vbtn');btn.textContent='Verifying…';btn.disabled=true;
+  try{const r=await api('/otp/verify',{method:'POST',body:JSON.stringify({phone:S.phone,code})});S.booking_token=r.token;
+    if(ME&&SESSION){try{const m=await aapi('/account/attach-phone',{method:'POST',body:JSON.stringify({booking_token:S.booking_token})});ME=m.user;syncAuth();}catch(e){}await placeOrder();}
+    else{const a=await api('/account/resolve',{method:'POST',body:JSON.stringify({booking_token:S.booking_token})});
+      if(a.exists){const s=await api('/account/save',{method:'POST',body:JSON.stringify({booking_token:S.booking_token,name:S.name,email:S.email,city:CITY})});setSession(s.session,s.user);await placeOrder();}
+      else{S.fromBooking=true;nav(loginSignup);}}
+  }
+  catch(e){btn.disabled=false;btn.textContent='Verify';alert(e.message);}
+}
+function otpScreen(){const fix=S.mode==='fix';return `<div class="step-h">Verify your number</div><p class="fsub">Enter the 6-digit code we sent to <b>${esc(S.phone)}</b>.</p>
+  ${S.devCode?`<div class="muted-card" style="border-color:rgba(20,49,92,.3);color:var(--green)">Use code <b style="font-family:'JetBrains Mono'">${S.devCode}</b> to continue. (In production this arrives by SMS.)</div>`:''}
+  <div class="field"><label>One-time code</label><input id="otp_code" inputmode="numeric" maxlength="6" placeholder="––––––" style="letter-spacing:8px;text-align:center;font-family:'JetBrains Mono';font-size:22px"></div>
+  <div class="dock"><button class="btn ${fix?'green':'amber'}" id="vbtn" onclick="verifyOtp()">Verify &amp; ${fix?'book repair':'confirm pickup'}</button>
+  <button class="btn btn-ghost" onclick="sendOtp(false)">Resend code</button>${S.otpMsg?`<p class="note">${S.otpMsg}</p>`:''}</div>`;}
+async function placeOrder(){
+  const c=cat(S.cat);const b=c.brands.find(x=>x.id===S.brand);
+  try{const o=await api('/orders',{method:'POST',body:JSON.stringify({type:(S.mode==='fix'?'repair':'sell'),model_id:S.model,device_label:`${b.name} ${S.modelName}`,details:S.mode==='fix'?{issues:S.issues,service_mode:S.svc,items:(S.quote&&S.quote.items)||[],gst_percent:S.quote&&S.quote.gst_percent,gst:S.quote&&S.quote.gst,total:S.quote&&S.quote.total}:{answers:S.answers,base_value:S.quote&&S.quote.base_value,payout:S.quote&&S.quote.payout,summary:condSummary()},amount:S.amount,service_mode:S.svc,customer_name:S.name,customer_phone:S.phone,customer_email:S.email,address:S.address,slot:S.slot,booking_token:S.booking_token})});S.order=o.ref;nav(done);}
+  catch(e){alert('Could not place order: '+e.message);const vb=document.getElementById('vbtn');if(vb){vb.disabled=false;vb.textContent='Verify';}}
+}
+function done(){const fix=S.mode==='fix';return `<div class="center"><div class="tick ${fix?'':'amber'}">✓</div><h1 style="font-size:30px">${fix?'Repair booked!':'Pickup scheduled!'}</h1><p class="fsub">${fix?'A technician is assigned for':'Our agent will collect your device'} <b style="color:var(--ink)">${S.slot}</b>.</p><div class="oid">Order ${S.order}</div>
+  <div class="quote" style="text-align:left"><div class="qrow"><span>Device</span><b>${esc(S.modelName)}</b></div><div class="qrow"><span>${fix?'Service':'Payout'}</span><b>${fix?MODES.find(m=>m[0]===S.svc)[2]:'Instant at pickup'}</b></div><div class="qrow tot"><span>${fix?'Estimated total':'You get'}</span><b style="${fix?'':'color:var(--amber)'}">${INR(S.amount)}</b></div></div>
+  <button class="btn green" style="margin-top:16px" onclick="trackRef('${S.order}')">Track this order →</button><button class="btn btn-ghost" onclick="showHome()">Back to home</button></div>`;}
+function openTrack(){const r=prompt('Enter your order ID (e.g. RGAB12C):');if(r)trackRef(r.trim().toUpperCase());}
+async function trackRef(ref){try{S.tracked=await api('/orders/'+ref);}catch(e){alert('Order not found');return;}
+  try{S.templates=await api('/order-templates');}catch(e){S.templates=[];}
+  try{S.thread=await api('/service/orders/'+ref+'/thread');}catch(e){S.thread=[];}
+  try{S.reviews=await api('/service/orders/'+ref+'/reviews');}catch(e){S.reviews=[];}
+  S.files=[];mode='flow';stack=[track];syncHeader();renderFlow();}
+function track(){const o=S.tracked;const fix=o.type==='repair';const steps=flowSteps(o.type);const flow=steps.map(s=>s.key);
+  const tmap={};(S.templates||[]).forEach(t=>tmap[t.key]=t);const cur=Math.max(0,flow.indexOf(o.status));
+  const fill=s=>String(s||'').replace(/{name}/g,o.customer_name||'there').replace(/{ref}/g,o.ref).replace(/{device}/g,o.device_label||'your device').replace(/{amount}/g,INR(o.amount)).replace(/{status}/g,statInfo(o.type,o.status).label||o.status);
+  return `<div class="step-h">Order ${o.ref}</div><p class="fsub">${fix?'Repair status':'Resale pickup status'} · ${esc(o.device_label)} &nbsp;${badge(o.type,o.status)}</p>
+  <div class="timeline">${steps.map((s,i)=>{const tpl=tmap[o.type+':'+s.key]||{};const label=s.label||tpl.label||s.key;const msg=i<=cur?(fill(tpl.body)||(i===cur?'In progress':'Done')):'Pending';return `<div class="tl ${i<cur?'done':i===cur?'now':''}"><div class="node">${i<cur?'✓':''}</div><div class="tx"><b>${esc(label)}</b><span>${esc(msg)}</span></div></div>`;}).join('')}</div>
+  <div class="muted-card">💬 Need help? Call <b style="color:var(--ink)">${esc(SET.phone||'+91 94038 90334')}</b>. Amount: <b style="color:var(--ink)">${INR(o.amount)}</b></div>
+  ${threadHTML(o.ref)}
+  ${reviewHTML(o.ref,'customer')}
+  <button class="btn green" style="margin-top:16px" onclick="showHome()">Done</button>`;}
+
+/* ---------------- Shared discussion thread + reviews ---------------- */
+function threadHTML(ref){
+  const list=(S.thread||[]).map(c=>{
+    const me=(c.author_role!=='system');const sys=c.author_role==='system';
+    const atts=(c.attachments||[]).map(a=>`<a class="att" href="/api/service/attachments/${a.id}" target="_blank" rel="noopener">${/^image\//.test(a.mime)?'🖼':'📄'} ${esc(a.name)}</a>`).join('');
+    if(sys)return `<div class="cmt sys"><span>${esc(c.body)}</span></div>`;
+    return `<div class="cmt ${c.author_role}"><div class="cmt-head"><b>${esc(c.author_name||c.author_role)}</b><span class="cmt-role">${esc(c.author_role)}</span></div>${c.body?`<div class="cmt-body">${esc(c.body)}</div>`:''}${atts?`<div class="cmt-atts">${atts}</div>`:''}</div>`;
+  }).join('')||`<div class="cmt sys"><span>No messages yet.</span></div>`;
+  const canPost=!!ME; // logged in (operator or the order's customer; server enforces ownership)
+  const composer=canPost?`
+    <div class="composer">
+      <textarea id="cmt_body" rows="2" placeholder="Write a message…"></textarea>
+      <div class="composer-row">
+        <label class="filebtn">📎 Attach <input type="file" accept="image/*,application/pdf" multiple onchange="pickFiles(this)"></label>
+        <span id="filehint" class="filehint"></span>
+        <button class="btn green" style="margin-left:auto" onclick="postComment('${ref}')">Send</button>
+      </div>
+      <div class="err" id="cmt_err"></div>
+    </div>`:`<div class="muted-card" style="margin-top:8px">Log in to join the discussion.</div>`;
+  return `<div class="thread"><div class="thread-h">Discussion</div>${list}${composer}</div>`;
+}
+const MAX_FILE=7*1024*1024;
+function pickFiles(input){
+  const out=[];const hint=document.getElementById('filehint');document.getElementById('cmt_err').textContent='';
+  const files=[...input.files].slice(0,5);let pending=files.length;if(!pending){S.files=[];hint.textContent='';return;}
+  files.forEach(f=>{
+    if(!(/^image\//.test(f.type)||f.type==='application/pdf')){document.getElementById('cmt_err').textContent='Only images and PDF files are allowed.';pending--;return;}
+    if(f.size>MAX_FILE){document.getElementById('cmt_err').textContent='“'+f.name+'” is over 7MB.';pending--;return;}
+    const r=new FileReader();r.onload=()=>{out.push({name:f.name,mime:f.type,data:r.result});if(--pending<=0){S.files=out;hint.textContent=out.length+' file(s) attached';}};
+    r.onerror=()=>{pending--;};r.readAsDataURL(f);
+  });
+}
+async function postComment(ref){
+  const body=(document.getElementById('cmt_body').value||'').trim();const err=document.getElementById('cmt_err');
+  if(!body&&!(S.files||[]).length){err.textContent='Write a message or attach a file.';return;}
+  try{await aapi('/service/orders/'+ref+'/comments',{method:'POST',body:JSON.stringify({body,attachments:S.files||[]})});
+    S.files=[];S.thread=await api('/service/orders/'+ref+'/thread');renderFlow();
+  }catch(e){err.textContent=e.message;}
+}
+function stars(n,active,onclick){let s='';for(let i=1;i<=5;i++)s+=`<span class="star ${i<=n?'on':''}" ${onclick?`onclick="${onclick}(${i})"`:''}>★</span>`;return s;}
+function reviewHTML(ref,role){
+  const reviews=S.reviews||[];const mine=reviews.find(r=>r.role===role);const other=reviews.find(r=>r.role!==role);
+  const otherBlock=other?`<div class="rev-other"><b>${other.role==='operator'?'Operator':'Customer'} rating</b> <span class="stars">${stars(other.rating)}</span>${other.review?`<p>${esc(other.review)}</p>`:''}</div>`:'';
+  if(!ME)return otherBlock?`<div class="reviewbox">${otherBlock}</div>`:'';
+  const r=S.revDraft||(mine?{rating:mine.rating,review:mine.review}:{rating:0,review:''});S.revDraft=r;
+  return `<div class="reviewbox">${otherBlock}
+    <div class="rev-mine"><b>${mine?'Your rating':'Rate this service'}</b>
+      <div class="stars" id="revstars">${stars(r.rating,true,'setStar')}</div>
+      <textarea id="rev_text" rows="2" placeholder="Share a few words (optional)…">${esc(r.review||'')}</textarea>
+      <div class="err" id="rev_err"></div>
+      <button class="btn green" style="margin-top:8px" onclick="postReview('${ref}','${role}')">${mine?'Update review':'Submit review'}</button>
+    </div></div>`;
+}
+function setStar(n){S.revDraft=S.revDraft||{};S.revDraft.rating=n;const el=document.getElementById('revstars');if(el)el.innerHTML=stars(n,true,'setStar');}
+async function postReview(ref,role){
+  const rating=(S.revDraft||{}).rating||0;const review=(document.getElementById('rev_text').value||'').trim();const err=document.getElementById('rev_err');
+  if(!(rating>=1&&rating<=5)){err.textContent='Pick 1 to 5 stars.';return;}
+  try{await aapi('/service/orders/'+ref+'/reviews',{method:'POST',body:JSON.stringify({rating,review})});
+    S.revDraft={rating,review};S.reviews=await api('/service/orders/'+ref+'/reviews');toast('Thanks for your review');renderFlow();
+  }catch(e){err.textContent=e.message;}
+}
+
+/* ---------------- Staff (operator) login on the main app ---------------- */
+function staffLoginFlow(){S.staff={};enterFlow(staffLogin);}
+function staffLogin(){return `<div class="step-h">Staff sign in</div><p class="fsub">Operators sign in here to manage service requests.</p>
+  <div class="field"><label>Username</label><input id="st_user" placeholder="operator" autocomplete="username"></div>
+  <div class="field"><label>Password</label><input id="st_pass" type="password" placeholder="••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')doStaffLogin()"></div>
+  <div class="err" id="st_err"></div>
+  <div class="dock"><button class="btn green" id="stbtn" onclick="doStaffLogin()">Sign in →</button></div>`;}
+async function doStaffLogin(){const username=val('st_user'),password=val('st_pass');const err=document.getElementById('st_err');err.textContent='';
+  if(!username){err.textContent='Enter your username.';return;}
+  if(!password){err.textContent='Enter your password.';return;}
+  try{const r=await api('/account/staff-login',{method:'POST',body:JSON.stringify({username,password})});setSession(r.session,r.user);
+    if((r.user.perms||[]).includes('service_requests'))showService();else showHome();toast('Signed in');
+  }catch(e){err.textContent=e.message;}}
+
+/* ---------------- Operator: Service Requests console ---------------- */
+async function showService(){
+  if(!hasPerm('service_requests')){enterFlow(staffLogin);return;}
+  mode='flow';stack=[serviceList];syncHeader();
+  try{S.svc=await aapi('/service/orders');}catch(e){S.svc=[];}
+  S.svcFilter=S.svcFilter||'all';renderFlow();
+}
+function serviceList(){
+  const all=S.svc||[];const f=S.svcFilter||'all';
+  const list=f==='all'?all:all.filter(o=>o.type===f);
+  const rows=list.map(o=>`<div class="svc-row" onclick="openService('${o.ref}')" role="button" tabindex="0">
+    <div class="svc-main"><span class="oref">${o.ref}</span><span class="badge ${o.type}">${o.type==='repair'?'Repair':'Sell'}</span><b>${esc(o.device_label||'')}</b></div>
+    <div class="svc-sub">${esc(o.customer_name||'—')} · ${esc(o.customer_phone||'no phone')}</div>
+    <div class="svc-foot">${badge(o.type,o.status)}<span class="svc-amt">${INR(o.amount)}</span></div>
+  </div>`).join('')||`<div class="muted-card">No service requests${f!=='all'?' in this filter':''} yet.</div>`;
+  const chip=(k,l)=>`<button class="filterchip ${f===k?'on':''}" onclick="S.svcFilter='${k}';renderFlow()">${l}</button>`;
+  return `<div class="step-h">Service Requests</div><p class="fsub">${all.length} request${all.length===1?'':'s'} · update status and talk to customers.</p>
+    <div class="filterbar">${chip('all','All')}${chip('repair','Repairs')}${chip('sell','Resale')}</div>
+    <div class="svc-list">${rows}</div>`;
+}
+async function openService(ref){
+  try{S.tracked=await aapi('/service/orders/'+ref);}catch(e){alert('Could not load');return;}
+  try{S.templates=await api('/order-templates');}catch(e){S.templates=[];}
+  try{S.thread=await api('/service/orders/'+ref+'/thread');}catch(e){S.thread=[];}
+  try{S.reviews=await api('/service/orders/'+ref+'/reviews');}catch(e){S.reviews=[];}
+  S.files=[];S.revDraft=null;nav(serviceDetail);
+}
+function serviceDetail(){
+  const o=S.tracked;const steps=flowSteps(o.type);
+  return `<div class="step-h">${o.ref} ${badge(o.type,o.status)}</div>
+    <p class="fsub">${esc(o.device_label||'')} · ${esc(o.customer_name||'—')} · ${esc(o.customer_phone||'')}</p>
+    <div class="field"><label>Update status</label>
+      <select id="svc_status" onchange="opSetStatus('${o.ref}',this.value)">${steps.map(s=>`<option value="${s.key}" ${o.status===s.key?'selected':''}>${esc(s.label)}</option>`).join('')}</select></div>
+    ${threadHTML(o.ref)}
+    ${reviewHTML(o.ref,'operator')}`;
+}
+async function opSetStatus(ref,status){
+  try{const o=await aapi('/service/orders/'+ref+'/status',{method:'PUT',body:JSON.stringify({status})});S.tracked=o;
+    S.thread=await api('/service/orders/'+ref+'/thread');toast('Status → '+statInfo(o.type,status).label);renderFlow();
+  }catch(e){alert(e.message);}
+}
+
+boot();
+</script>
+</body>
+</html>

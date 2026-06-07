@@ -1,0 +1,468 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ReGear Admin</title>
+<link rel="stylesheet" href="/admin.css">
+</head>
+<body>
+<div id="root"></div>
+<div class="toast" id="toast"></div>
+<script>
+const API='/api';
+let TOKEN=localStorage.getItem('regear_token')||'';
+let tab='overview', adminCat=null, adminModel=null, data={}, commsTab='repair', commsStatus=null, accessQ='', accessTimer=null;
+const INR=n=>'₹'+Number(Math.round(n||0)).toLocaleString('en-IN');
+const esc=s=>String(s==null?'':s).replace(/"/g,'&quot;').replace(/</g,'&lt;');
+const catIco=x=>(x&&(x.emoji||'').startsWith('data:'))?'<img src="'+x.emoji+'" alt="" style="height:16px;width:auto;vertical-align:-3px;border-radius:3px">':((x&&x.emoji)||'');
+function flash(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1700);}
+
+async function api(path,opts={}){
+  const r=await fetch(API+path,{headers:{'Content-Type':'application/json',...(TOKEN?{Authorization:'Bearer '+TOKEN}:{})},...opts});
+  if(r.status===401){TOKEN='';localStorage.removeItem('regear_token');renderLogin();throw new Error('Session expired');}
+  if(!r.ok)throw new Error((await r.json().catch(()=>({}))).error||'Request failed');
+  return r.json();
+}
+
+const PAGES={
+  overview:['Overview','Your store at a glance','◫'],
+  catalog:['Catalog','Device types, brands & models','▦'],
+  repair:['Repair pricing','Category defaults & per-model prices','✚'],
+  resale:['Resale','Condition multipliers that set payouts','₹'],
+  orders:['Orders','Repair & resale pipeline','▤'],
+  corporate:['Corporate','B2B bulk sell & buy enquiries','◍'],
+  comms:['Communications','Emails & messages sent for every order','✉'],
+  access:['Access','Users, roles & permissions','◐'],
+  settings:['Settings','Store configuration','⚙'],
+};
+
+/* ---------- LOGIN ---------- */
+function renderLogin(msg){
+  document.getElementById('root').innerHTML=`<div class="login"><div class="box">
+    <div class="brand"><span class="dot"></span><div><b>ReGear</b><small>Admin console</small></div></div>
+    <div class="card2"><h2>Sign in</h2><p>Manage catalog, pricing & orders</p>
+      <label>Email</label><input id="le" value="admin@regear.in">
+      <label>Password</label><input id="lp" type="password" value="admin123" onkeydown="if(event.key==='Enter')doLogin()">
+      <button class="btn ink" style="width:100%;margin-top:20px" onclick="doLogin()">Sign in</button>
+      ${msg?`<p style="color:var(--amber);margin-top:13px;font-size:13px">${msg}</p>`:''}
+      <div class="hint">Demo credentials are pre-filled.</div>
+    </div></div></div>`;
+}
+async function doLogin(){
+  try{
+    const r=await fetch(API+'/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:document.getElementById('le').value,password:document.getElementById('lp').value})});
+    if(!r.ok){renderLogin('Invalid email or password');return;}
+    const d=await r.json();TOKEN=d.token;localStorage.setItem('regear_token',TOKEN);tab='overview';boot();
+  }catch(e){renderLogin('Could not reach server. Run npm start.');}
+}
+function logout(){TOKEN='';localStorage.removeItem('regear_token');renderLogin();}
+
+/* ---------- SHELL ---------- */
+function shell(body){
+  const order=['overview','catalog','repair','resale','orders','corporate','comms','access','settings'];
+  const city=(data.settings&&data.settings.city)||'Bengaluru';
+  return `<div class="layout">
+    <aside class="sidebar">
+      <div class="brand"><span class="dot"></span><div><b>ReGear</b><small>Admin console</small></div></div>
+      <nav class="nav">${order.map(k=>`<div class="navi ${tab===k?'on':''}" onclick="setTab('${k}')"><span class="ic">${PAGES[k][2]}</span>${PAGES[k][0]}</div>`).join('')}</nav>
+      <div class="side-foot">
+        <a href="/" class="navi"><span class="ic">↗</span>View store</a>
+        <div class="navi" onclick="logout()"><span class="ic">⏻</span>Sign out</div>
+        <div class="acct"><div class="av">A</div><div><b>admin@regear.in</b><small>Administrator</small></div></div>
+      </div>
+    </aside>
+    <main class="main">
+      <header class="topbar">
+        <div><div class="ttl">${PAGES[tab][0]}</div><div class="ttl-sub">${PAGES[tab][1]}</div></div>
+        <span class="chip-city">◷ ${esc(city)}</span>
+      </header>
+      <div id="screen" class="content">${body}</div>
+    </main></div>`;
+}
+function setTab(t){tab=t;adminModel=null;boot();}
+function render(body){document.getElementById('root').innerHTML=shell(body);}
+
+async function boot(){
+  if(!TOKEN){renderLogin();return;}
+  try{
+    if(!data.settings)data.settings=await api('/settings');
+    if(!data.statuses)data.statuses=await api('/service/order-statuses');
+    if(tab==='overview'){data.orders=await api('/orders');data.catalog=data.catalog||await api('/catalog');data.leads=await api('/corporate');render(overviewView());}
+    else if(tab==='catalog'){data.catalog=await api('/catalog');if(!adminCat&&data.catalog[0])adminCat=data.catalog[0].id;render(catalogView());}
+    else if(tab==='repair'){data.catalog=data.catalog||await api('/catalog');if(!adminCat)adminCat=data.catalog[0].id;data.settings=await api('/settings');if(adminModel){data.modelIssues=await api('/models/'+adminModel+'/repair-issues');}else{data.issues=await api('/repair-issues?category_id='+adminCat);}render(repairView());}
+    else if(tab==='resale'){data.conditions=await api('/conditions');render(resaleView());}
+    else if(tab==='orders'){data.orders=await api('/orders');render(ordersView());}
+    else if(tab==='corporate'){data.leads=await api('/corporate');render(corporateView());}
+    else if(tab==='comms'){data.templates=await api('/order-templates');data.settings=await api('/settings');data.statuses=await api('/service/order-statuses');render(commsView());}
+    else if(tab==='access'){data.users=await api('/access/users?q=');data.roles=await api('/access/roles');render(accessView());}
+    else if(tab==='settings'){data.settings=await api('/settings');render(settingsView());}
+  }catch(e){flash(e.message);}
+}
+
+/* ---------- OVERVIEW ---------- */
+function overviewView(){
+  const o=data.orders||[];
+  const repairs=o.filter(x=>x.type==='repair').length;
+  const sells=o.filter(x=>x.type==='sell').length;
+  const value=o.reduce((a,b)=>a+(b.amount||0),0);
+  const pending=o.filter(x=>x.status==='placed');
+  const leads=data.leads||[];const newLeads=leads.filter(l=>l.status==='new');
+  const kpis=[['Total orders',o.length,'▤','green'],['Repairs',repairs,'✚','green'],['Resale pickups',sells,'↺','amber'],['Order value',INR(value),'₹','ink'],['Corporate leads',leads.length,'◍','amber']];
+  return `<div class="kpis" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr))">${kpis.map(k=>`<div class="kpi"><div class="kpi-ic ${k[3]}">${k[2]}</div><div class="kpi-n">${k[1]}</div><div class="kpi-l">${k[0]}</div></div>`).join('')}</div>
+  <div class="ov-grid">
+    <section class="card pad">
+      <div class="card-h"><b>Recent orders</b><span class="link" onclick="setTab('orders')">View all →</span></div>
+      ${o.length?o.slice(0,6).map(r=>`<div class="trow-mini"><span class="oref">${r.ref}</span><span class="badge ${r.type}">${r.type}</span><span class="odev">${esc(r.device_label)}</span><span class="oamt">${INR(r.amount)}</span>${statusBadge(r.type,r.status)}</div>`).join(''):`<div class="empty"><b>No orders yet</b><span>Place one from the storefront to see it here.</span></div>`}
+    </section>
+    <section class="card pad">
+      <div class="card-h"><b>Catalog</b><span class="link" onclick="setTab('catalog')">Manage →</span></div>
+      ${(data.catalog||[]).map(c=>`<div class="cat-line"><span>${catIco(c)} ${esc(c.name)}</span><b>${c.brands.reduce((s,b)=>s+b.models.length,0)} models</b></div>`).join('')}
+      <div class="card-h" style="margin:20px 0 12px"><b>Needs attention</b></div>
+      ${pending.length?`<div class="alert">⚠ ${pending.length} order${pending.length>1?'s':''} awaiting action<span class="link" onclick="setTab('orders')">Open →</span></div>`:''}
+      ${newLeads.length?`<div class="alert" style="margin-top:8px">◍ ${newLeads.length} new corporate lead${newLeads.length>1?'s':''}<span class="link" onclick="setTab('corporate')">Open →</span></div>`:''}
+      ${!pending.length&&!newLeads.length?`<div class="ok">✓ All caught up</div>`:''}
+    </section>
+  </div>`;
+}
+
+/* ---------- CATALOG ---------- */
+function catalogView(){
+  const c=data.catalog.find(x=>x.id===adminCat)||data.catalog[0];
+  const prev=(c&&(c.emoji||'').startsWith('data:'))?`<img src="${c.emoji}" alt="" style="height:30px;width:auto">`:(c?(c.emoji||'📦'):'📦');
+  return `<p class="lead">Add device types, brands, and models. Models carry a base resale value; repair pricing lives under <b>Repair pricing</b>.</p>
+  <div class="catpick">${data.catalog.map(x=>`<div class="c ${x.id===adminCat?'on':''}" onclick="adminCat=${x.id};render(catalogView())">${catIco(x)} ${esc(x.name)}</div>`).join('')}</div>
+  ${c?`<div class="card" style="padding:14px 16px;margin-bottom:14px"><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+    <div style="width:46px;height:46px;border-radius:11px;background:#fff;border:1px solid var(--line);display:grid;place-items:center;font-size:24px;overflow:hidden">${prev}</div>
+    <div class="grow" style="min-width:150px"><div style="font-weight:600;font-size:13px">Category icon &amp; name</div><div style="font-size:12px;color:var(--ink-soft)">Shown across the storefront</div></div>
+    <input value="${esc(c.name)}" style="max-width:190px" onchange="updCategory(${c.id},'name',this.value)">
+    <input value="${(c.emoji||'').startsWith('data:')?'':esc(c.emoji)}" placeholder="emoji" style="max-width:74px;text-align:center" onchange="updCategory(${c.id},'emoji',this.value)">
+    <button class="btn sm ghost" onclick="pickCatIcon(${c.id})">Upload icon</button>
+    <button class="del" title="Delete category" onclick="delCategory(${c.id})">×</button>
+  </div></div>`:''}
+  <div class="addbar card" style="border-radius:12px">
+    <input id="nc_emoji" placeholder="📦" style="max-width:60px;flex:0 0 auto">
+    <input id="nc_name" placeholder="New category name">
+    <input id="nc_slug" placeholder="slug" style="max-width:120px;flex:0 0 auto">
+    <button class="btn sm" onclick="addCategory()">＋ Category</button>
+  </div>
+  ${c?`<div class="eyebrow">${esc(c.name)} · brands & models</div>
+  ${c.brands.map(b=>`<div class="card">
+    <div class="brandhead">${esc(b.name)}<button class="del" style="margin-left:auto" onclick="delBrand(${b.id})">×</button></div>
+    ${b.models.map(m=>`<div class="modrow">
+      <input class="flat nm" value="${esc(m.name)}" onchange="updModel(${m.id},'name',this.value)">
+      <span style="font-size:11px;color:var(--ink-soft)">base ₹</span>
+      <input class="num" type="number" value="${m.base_value}" onchange="updModel(${m.id},'base_value',+this.value)">
+      <button class="del" onclick="delModel(${m.id})">×</button></div>`).join('')}
+    <div class="addbar"><input id="nm_name_${b.id}" placeholder="New model"><input id="nm_base_${b.id}" class="num" type="number" placeholder="base ₹"><button class="btn sm" onclick="addModel(${b.id})">＋ Model</button></div>
+  </div>`).join('')}
+  <div class="addbar card" style="border-radius:12px"><input id="nb_name" placeholder="New brand for ${esc(c.name)}"><button class="btn sm" onclick="addBrand(${c.id})">＋ Brand</button></div>`:''}`;
+}
+async function updCategory(id,f,v){await api('/categories/'+id,{method:'PUT',body:JSON.stringify({[f]:v})});flash('Saved');boot();}
+async function delCategory(id){if(!confirm('Delete this category and all its brands & models?'))return;await api('/categories/'+id,{method:'DELETE'});adminCat=null;flash('Category deleted');boot();}
+function pickCatIcon(id){const inp=document.createElement('input');inp.type='file';inp.accept='image/*';inp.onchange=async()=>{const f=inp.files[0];if(!f)return;try{const url=await resizeToDataURL(f,96);if(url.length>300000){flash('Icon too large — try a smaller image');return;}await api('/categories/'+id,{method:'PUT',body:JSON.stringify({emoji:url})});flash('Icon updated');boot();}catch(e){flash('Could not read image');}};inp.click();}
+async function addCategory(){const name=document.getElementById('nc_name').value.trim();let slug=document.getElementById('nc_slug').value.trim();if(!name)return flash('Enter a name');if(!slug)slug=name.toLowerCase().replace(/\s+/g,'-');try{const c=await api('/categories',{method:'POST',body:JSON.stringify({slug,name,emoji:document.getElementById('nc_emoji').value})});adminCat=c.id;flash('Category added');boot();}catch(e){flash(e.message);}}
+async function addBrand(cid){const name=document.getElementById('nb_name').value.trim();if(!name)return flash('Enter a brand name');await api('/brands',{method:'POST',body:JSON.stringify({category_id:cid,name})});flash('Brand added');boot();}
+async function delBrand(id){if(!confirm('Delete this brand and all its models?'))return;await api('/brands/'+id,{method:'DELETE'});flash('Brand deleted');boot();}
+async function addModel(bid){const name=document.getElementById('nm_name_'+bid).value.trim();const base=+document.getElementById('nm_base_'+bid).value||0;if(!name)return flash('Enter a model name');await api('/models',{method:'POST',body:JSON.stringify({brand_id:bid,name,base_value:base})});flash('Model added');boot();}
+async function updModel(id,f,v){await api('/models/'+id,{method:'PUT',body:JSON.stringify({[f]:v})});flash('Saved');}
+async function delModel(id){await api('/models/'+id,{method:'DELETE'});flash('Model deleted');boot();}
+
+/* ---------- REPAIR PRICING ---------- */
+function repairView(){
+  const c=data.catalog.find(x=>x.id===adminCat)||data.catalog[0];
+  const models=c?c.brands.flatMap(b=>b.models.map(m=>({id:m.id,name:m.name,brand:b.name}))):[];
+  return `<p class="lead">Set <b>default</b> prices per category, then pick a model to override where parts cost more or less.</p>
+  <div class="catpick">${data.catalog.map(x=>`<div class="c ${x.id===adminCat?'on':''}" onclick="adminCat=${x.id};adminModel=null;boot()">${catIco(x)} ${esc(x.name)}</div>`).join('')}</div>
+  <div class="eyebrow">Editing prices for</div>
+  <div class="catpick">
+    <div class="c ${!adminModel?'on':''}" onclick="adminModel=null;boot()">⭐ Default (all ${esc(c.name.toLowerCase())}s)</div>
+    ${models.map(m=>`<div class="c ${adminModel===m.id?'on':''}" onclick="adminModel=${m.id};boot()">${esc(m.brand)} ${esc(m.name)}</div>`).join('')}
+  </div>
+  ${adminModel?modelPriceTable(models.find(m=>m.id===adminModel)):defaultPriceTable()}`;
+}
+function defaultPriceTable(){
+  return `<div class="card"><div class="thead"><div style="flex:1">Issue</div><div style="width:96px">Default ₹</div><div style="width:74px">ETA</div><div style="width:64px">All models</div><div style="width:26px"></div></div>
+    ${data.issues.map(it=>`<div class="crow">
+      <input class="flat grow" value="${esc(it.name)}" onchange="updIssue(${it.id},'name',this.value)">
+      <input class="num" type="number" value="${it.price}" onchange="updIssue(${it.id},'price',+this.value)">
+      <input class="flat" style="width:74px" value="${esc(it.eta)}" onchange="updIssue(${it.id},'eta',this.value)">
+      <label class="appchk" style="width:64px;justify-content:center" title="On = applies to every model in this category. Off = hidden by default; switch it on only for the models that have it (e.g. Touch Bar)."><input type="checkbox" ${it.default_on?'checked':''} onchange="updIssue(${it.id},'default_on',this.checked?1:0)"></label>
+      <button class="del" onclick="delIssue(${it.id})">×</button></div>`).join('')}
+    <div class="addbar"><input id="ni_name" placeholder="New issue type"><input id="ni_price" class="num" type="number" placeholder="₹"><input id="ni_eta" placeholder="ETA" style="max-width:74px"><label class="appchk" title="Leave on for issues every model has; turn off for model-specific issues like Touch Bar"><input type="checkbox" id="ni_all" checked> all models</label><button class="btn sm" onclick="addIssue()">＋ Add</button></div>
+  </div>
+  <div class="eyebrow">Tax</div>
+  <div class="crow card" style="border-radius:12px"><div class="grow" style="font-weight:600">GST applied to repair total</div><input class="num" type="number" value="${data.settings.gst_percent||18}" onchange="saveSetting('gst_percent',+this.value)"> %</div>
+  <p class="lead" style="margin-top:14px">These apply to every model in this category. Turn off <b>“all models”</b> for an issue only some have (e.g. Touch Bar) — it stays hidden until you switch it on under a specific model's tab.</p>`;
+}
+function modelPriceTable(m){
+  return `<p class="lead" style="margin-top:-4px;margin-bottom:14px">Editing <b>${m?esc(m.brand+' '+m.name):'model'}</b>. Toggle <b>“has it”</b> to control which issues this model shows customers; an <span style="color:var(--amber);font-weight:700">amber</span> price is a model-specific override.</p>
+  <div class="card"><div class="thead"><div style="flex:1">Issue</div><div style="width:60px">Has it</div><div style="width:104px">Price ₹</div><div style="width:74px">ETA</div><div style="width:54px"></div></div>
+    ${data.modelIssues.map(it=>`<div class="crow" style="${it.applies?'':'opacity:.5'}">
+      <div class="grow"><b style="font-weight:600">${esc(it.name)}</b><div style="font-size:11.5px;color:var(--ink-soft)">default ₹${it.default_price} · ${esc(it.default_eta)}${it.default_on?'':' · <span style="color:var(--amber)">model-specific</span>'}</div></div>
+      <label class="appchk" style="width:60px;justify-content:center"><input type="checkbox" ${it.applies?'checked':''} onchange="setModelApplies(${it.issue_id},this.checked)"></label>
+      <input class="num" type="number" value="${it.price}" ${it.applies?'':'disabled'} style="${it.is_override?'border-color:var(--amber);color:var(--amber);font-weight:700':''}" onchange="setModelPrice(${it.issue_id},'price',this.value)">
+      <input class="flat" style="width:74px${it.is_override?';color:var(--amber)':''}" value="${esc(it.eta)}" ${it.applies?'':'disabled'} onchange="setModelPrice(${it.issue_id},'eta',this.value)">
+      ${it.is_override?`<button class="btn sm ghost" onclick="resetModelPrice(${it.issue_id})">reset</button>`:`<span style="font-size:11px;color:var(--ink-soft)">default</span>`}
+    </div>`).join('')}
+  </div>
+  <p class="lead" style="margin-top:14px"><b>“Has it”</b> decides whether customers see an issue for <b>this model</b> (e.g. switch on Touch Bar only for MacBooks that have one). Price/ETA edits here affect this model only; “reset” drops the override.</p>`;
+}
+async function setModelPrice(issueId,field,value){
+  const it=data.modelIssues.find(x=>x.issue_id===issueId);
+  const price=field==='price'?(+value||0):it.price;
+  const eta=field==='eta'?value:it.eta;
+  await api('/model-repair-prices',{method:'PUT',body:JSON.stringify({model_id:adminModel,issue_id:issueId,price,eta})});
+  flash('Saved for this model');boot();
+}
+async function setModelApplies(issueId,checked){
+  await api('/model-repair-prices',{method:'PUT',body:JSON.stringify({model_id:adminModel,issue_id:issueId,enabled:checked?1:0})});
+  flash(checked?'Shown for this model':'Hidden for this model');boot();
+}
+async function resetModelPrice(issueId){
+  await api('/model-repair-prices',{method:'DELETE',body:JSON.stringify({model_id:adminModel,issue_id:issueId})});
+  flash('Reverted to default');boot();
+}
+async function addIssue(){const name=document.getElementById('ni_name').value.trim();if(!name)return flash('Enter issue name');await api('/repair-issues',{method:'POST',body:JSON.stringify({category_id:adminCat,name,price:+document.getElementById('ni_price').value||0,eta:document.getElementById('ni_eta').value,default_on:document.getElementById('ni_all').checked?1:0})});flash('Issue added');boot();}
+async function updIssue(id,f,v){await api('/repair-issues/'+id,{method:'PUT',body:JSON.stringify({[f]:v})});flash('Saved');}
+async function delIssue(id){await api('/repair-issues/'+id,{method:'DELETE'});flash('Deleted');boot();}
+
+/* ---------- RESALE ---------- */
+function resaleView(){
+  return `<p class="lead">Each group is a question in the sell flow. The % is the multiplier applied to a model's base value.</p>
+  ${data.conditions.map(g=>`<div class="card"><div class="brandhead">${esc(g.name)}<button class="del" style="margin-left:auto" onclick="delGroup(${g.id})">×</button></div>
+    ${g.options.map(o=>`<div class="modrow"><input class="flat nm" value="${esc(o.label)}" onchange="updOpt(${o.id},'label',this.value)"><input class="num" style="width:80px" type="number" value="${o.factor}" onchange="updOpt(${o.id},'factor',+this.value)"> %<button class="del" onclick="delOpt(${o.id})">×</button></div>`).join('')}
+    <div class="addbar"><input id="no_label_${g.id}" placeholder="New answer"><input id="no_factor_${g.id}" class="num" style="width:80px" type="number" placeholder="%"><button class="btn sm" onclick="addOpt(${g.id})">＋</button></div>
+  </div>`).join('')}
+  <div class="addbar card" style="border-radius:12px"><input id="ng_name" placeholder="New condition question (e.g. Battery health)"><button class="btn sm amber" onclick="addGroup()">＋ Question</button></div>`;
+}
+async function addGroup(){const name=document.getElementById('ng_name').value.trim();if(!name)return flash('Enter a question');await api('/condition-groups',{method:'POST',body:JSON.stringify({name})});flash('Added');boot();}
+async function delGroup(id){if(!confirm('Delete this question and its answers?'))return;await api('/condition-groups/'+id,{method:'DELETE'});flash('Deleted');boot();}
+async function addOpt(gid){const label=document.getElementById('no_label_'+gid).value.trim();if(!label)return flash('Enter an answer');await api('/condition-options',{method:'POST',body:JSON.stringify({group_id:gid,label,factor:+document.getElementById('no_factor_'+gid).value||100})});flash('Added');boot();}
+async function updOpt(id,f,v){await api('/condition-options/'+id,{method:'PUT',body:JSON.stringify({[f]:v})});flash('Saved');}
+async function delOpt(id){await api('/condition-options/'+id,{method:'DELETE'});flash('Deleted');boot();}
+
+/* ---------- ORDERS ---------- */
+/* DB-driven status helpers + colour badge (shared across views) */
+function flowStatuses(flow){return (data.statuses||[]).filter(s=>s.flow===flow).slice().sort((a,b)=>a.sort-b.sort);}
+function statusInfo(flow,key){return (data.statuses||[]).find(s=>s.flow===flow&&s.key===key)||{label:key,color:'orange'};}
+function statusBadge(flow,key){const s=statusInfo(flow,key);return `<span class="badge2 ${s.color}">${esc(s.label||key)}</span>`;}
+function ordersView(){
+  if(!data.orders.length)return `<p class="lead">Repair bookings and resale pickups land here.</p><div class="card"><div class="empty"><b>No orders yet</b><span>Place one from the storefront to test the pipeline.</span></div></div>`;
+  return `<p class="lead">${data.orders.length} order${data.orders.length>1?'s':''} <span class="pill">live</span> · update status to move an order through its pipeline. Customers see this on the tracking page.</p>
+  <div class="card">${data.orders.map(o=>`<div class="ordrow">
+    <div class="ordtop"><span class="ordref">${o.ref}</span><span class="badge ${o.type}">${o.type}</span><b>${esc(o.device_label||'')}</b><span class="amt">${INR(o.amount)}</span>${statusBadge(o.type,o.status)}</div>
+    <div class="ordmeta">${esc(o.customer_name||'—')} · ${esc(o.customer_phone||'no phone')} · ${esc(o.slot||'')}</div>
+    ${orderDetails(o)}
+    <div class="rowline"><span class="lbl-mini">Status</span>
+      <select onchange="setStatus('${o.ref}',this.value)">${flowStatuses(o.type).map(s=>`<option value="${s.key}" ${o.status===s.key?'selected':''}>${esc(s.label)}</option>`).join('')||`<option>${esc(o.status)}</option>`}</select></div>
+  </div>`).join('')}</div>`;
+}
+function orderDetails(o){
+  let d=o.details; try{ if(typeof d==='string') d=JSON.parse(d); }catch(e){ d=null; }
+  if(!d) return '';
+  const box=inner=>inner?`<div style="margin-top:8px;font-size:12px;color:var(--ink-soft);line-height:1.65;background:rgba(14,23,38,.03);border-radius:10px;padding:9px 12px">${inner}</div>`:'';
+  if(o.type==='sell'){
+    const sum=Array.isArray(d.summary)?d.summary:[];
+    const declared=sum.length?`<div><b style="color:var(--ink)">Condition declared:</b> ${sum.map(s=>esc(s.q)+' — <b>'+esc(s.a)+'</b>').join(' · ')}</div>`:'';
+    let calc='';
+    if(d.base_value!=null){
+      const steps=sum.filter(s=>s.factor!=null).map(s=>`× ${s.factor}% <span style="opacity:.65">(${esc(s.a)})</span>`).join(' ');
+      calc=`<div style="margin-top:3px"><b style="color:var(--ink)">Payout calc:</b> base ${INR(d.base_value)} ${steps} = <b style="color:var(--amber)">${INR(d.payout!=null?d.payout:o.amount)}</b></div>`;
+    }
+    return box(declared+calc);
+  }
+  if(o.type==='repair'){
+    const items=Array.isArray(d.items)?d.items:[];
+    let calc='';
+    if(items.length){
+      calc=`<div><b style="color:var(--ink)">Repair calc:</b> ${items.map(it=>esc(it.name)+' '+INR(it.price)).join(' + ')}${d.gst!=null?` + GST ${d.gst_percent}% (${INR(d.gst)})`:''} = <b style="color:var(--green)">${INR(d.total!=null?d.total:o.amount)}</b></div>`;
+    }
+    const svc=d.service_mode?`<div><b style="color:var(--ink)">Service:</b> ${esc(d.service_mode)}</div>`:'';
+    return box(svc+calc);
+  }
+  return '';
+}
+async function setStatus(ref,status){await api('/orders/'+ref+'/status',{method:'PUT',body:JSON.stringify({status})});flash('Order '+ref+' → '+status);boot();}
+
+/* ---------- CORPORATE ---------- */
+function corporateView(){
+  const L=data.leads||[];
+  if(!L.length)return `<p class="lead">Bulk <b>sell</b> (asset recovery) and bulk <b>buy</b> (procurement) enquiries from businesses land here.</p><div class="card"><div class="empty"><b>No corporate enquiries yet</b><span>Submissions from the storefront “For business” page appear here.</span></div></div>`;
+  return `<p class="lead">${L.length} enquir${L.length>1?'ies':'y'} <span class="pill">B2B</span> · follow up and move each through its status.</p>
+  <div class="card">${L.map(l=>`<div class="ordrow">
+    <div class="ordtop"><span class="ordref">${l.ref}</span><span class="badge ${l.intent==='sell'?'repair':'sell'}">${l.intent==='sell'?'bulk sell':'bulk buy'}</span><b>${esc(l.company)}</b>${l.quantity?`<span class="amt">${l.quantity} units</span>`:''}</div>
+    <div class="ordmeta">${esc(l.contact_name||'—')}${l.email?' · '+esc(l.email):''}${l.phone?' · '+esc(l.phone):''}${l.device_types?' · '+esc(l.device_types):''}</div>
+    ${l.message?`<div class="ordmeta" style="margin-top:4px">“${esc(l.message)}”</div>`:''}
+    <div style="margin-top:9px;display:flex;gap:8px;align-items:center"><span style="font-size:12px;color:var(--ink-soft)">Status</span>
+      <select onchange="setLeadStatus(${l.id},this.value)">${['new','contacted','closed'].map(s=>`<option ${l.status===s?'selected':''}>${s}</option>`).join('')}</select></div>
+  </div>`).join('')}</div>`;
+}
+async function setLeadStatus(id,status){await api('/corporate/'+id+'/status',{method:'PUT',body:JSON.stringify({status})});flash('Lead → '+status);boot();}
+
+/* ---------- SETTINGS ---------- */
+function settingsView(){
+  const s=data.settings;
+  const DEFAULT_CITIES='Bengaluru, Mumbai, Delhi, Hyderabad, Chennai, Pune, Kolkata, Ahmedabad, Jaipur, Surat, Lucknow, Chandigarh, Kochi, Indore, Nagpur, Coimbatore, Visakhapatnam, Bhopal, Patna, Gurugram, Noida, Mysuru, Vadodara, Thiruvananthapuram';
+  const logo=s.logo?`<img src="${s.logo}" alt="logo" style="height:40px;background:#fff;border:1px solid var(--line);border-radius:8px;padding:5px">`:`<span style="color:var(--ink-soft);font-size:13px">No logo — wordmark is shown</span>`;
+  const fav=s.favicon?`<img src="${s.favicon}" alt="icon" style="width:28px;height:28px;border-radius:7px;border:1px solid var(--line)">`:`<span style="color:var(--ink-soft);font-size:13px">Default icon</span>`;
+  return `<p class="lead">Everything here shows up live on your storefront — branding, contact details, location and SEO.</p>
+  <div class="eyebrow">Branding</div>
+  <div class="card" style="padding:6px 0">
+    <div class="crow"><div class="grow"><div style="font-weight:600">Logo</div><div style="font-size:12px;color:var(--ink-soft)">Shown in the header & footer. PNG/SVG, auto-resized.</div></div>${logo}<button class="btn sm ghost" onclick="pickImage('logo')">Upload</button>${s.logo?`<button class="btn sm ghost" onclick="removeImage('logo')">Remove</button>`:''}</div>
+    <div class="crow"><div class="grow"><div style="font-weight:600">Favicon</div><div style="font-size:12px;color:var(--ink-soft)">The little browser-tab icon.</div></div>${fav}<button class="btn sm ghost" onclick="pickImage('favicon')">Upload</button>${s.favicon?`<button class="btn sm ghost" onclick="removeImage('favicon')">Remove</button>`:''}</div>
+    <div class="crow"><div class="grow" style="font-weight:600">Brand name</div><input class="w" style="max-width:260px" value="${esc(s.brand_name||'ReGear')}" onchange="saveSetting('brand_name',this.value)"></div>
+    <div class="crow"><div class="grow" style="font-weight:600">Tagline</div><input class="w" style="max-width:320px" value="${esc(s.tagline||'')}" placeholder="Repair or sell your gadgets" onchange="saveSetting('tagline',this.value)"></div>
+  </div>
+  <div class="eyebrow">Contact &amp; location</div>
+  <div class="card" style="padding:6px 0">
+    <div class="crow"><div class="grow" style="font-weight:600">Phone</div><input class="w" style="max-width:260px" value="${esc(s.phone||'')}" placeholder="+91 …" onchange="saveSetting('phone',this.value)"></div>
+    <div class="crow"><div class="grow" style="font-weight:600">Email</div><input class="w" style="max-width:260px" value="${esc(s.email||'')}" placeholder="hello@…" onchange="saveSetting('email',this.value)"></div>
+    <div class="crow"><div class="grow" style="font-weight:600">Address</div><input class="w" style="max-width:340px" value="${esc(s.address||'')}" placeholder="Street, area" onchange="saveSetting('address',this.value)"></div>
+    <div class="crow"><div class="grow" style="font-weight:600">City</div><input class="w" style="max-width:260px" value="${esc(s.city||'Bengaluru')}" onchange="saveSetting('city',this.value)"></div>
+  </div>
+  <div class="eyebrow">Service cities</div>
+  <div class="card" style="padding:14px 16px">
+    <div style="font-weight:600;font-size:13.5px;margin-bottom:7px">Cities in the customer location picker</div>
+    <textarea class="w" rows="4" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:11px;font-family:inherit;font-size:14px;resize:vertical" placeholder="Bengaluru, Mumbai, Delhi …" onchange="saveSetting('cities',this.value)">${esc(s.cities||DEFAULT_CITIES)}</textarea>
+    <div style="font-size:12px;color:var(--ink-soft);margin-top:8px">Comma or new-line separated. This is the list customers pick from in the storefront's location modal.</div>
+  </div>
+  <div class="eyebrow">Sign-in</div>
+  <div class="card" style="padding:14px 16px">
+    <div style="font-weight:600;font-size:13.5px;margin-bottom:7px">Google Client ID</div>
+    <input class="w" style="width:100%;font-family:'JetBrains Mono',monospace;font-size:13px" value="${esc(s.google_client_id||'')}" placeholder="xxxxxxxx.apps.googleusercontent.com" onchange="saveSetting('google_client_id',this.value.trim())">
+    <div style="font-size:12px;color:var(--ink-soft);margin-top:8px">Paste your Google OAuth <b>Web</b> client ID to switch on “Continue with Google” for customers. In Google Cloud Console, add your site URL to the client's Authorized JavaScript origins. Leave blank to disable.</div>
+  </div>
+  <div class="eyebrow">SEO</div>
+  <div class="card" style="padding:14px 16px">
+    <div style="font-weight:600;font-size:13.5px;margin-bottom:7px">Meta description</div>
+    <textarea class="w" rows="3" style="border:1px solid var(--line);border-radius:10px;padding:11px;font-family:inherit;font-size:14px;resize:vertical" placeholder="One or two sentences describing your store for Google & social shares." onchange="saveSetting('meta_description',this.value)">${esc(s.meta_description||'')}</textarea>
+    <div style="font-size:12px;color:var(--ink-soft);margin-top:8px">Used in the page title tag area, Open Graph share cards, and structured data.</div>
+  </div>
+  <div class="eyebrow">Pricing</div>
+  <div class="crow card" style="border-radius:12px"><div class="grow" style="font-weight:600">GST applied to repair total</div><input class="num" type="number" value="${s.gst_percent||18}" onchange="saveSetting('gst_percent',+this.value)"> %</div>
+  <p class="lead" style="margin-top:18px">In production this screen also manages users, roles, and an audit log of changes. For real SEO, the storefront should be server-rendered (e.g. Next.js) with per-locality pages.</p>`;
+}
+async function saveSetting(k,v){await api('/settings',{method:'PUT',body:JSON.stringify({[k]:v})});data.settings[k]=v;flash('Saved');}
+function pickImage(kind){const inp=document.createElement('input');inp.type='file';inp.accept='image/*';inp.onchange=async()=>{const f=inp.files[0];if(!f)return;try{const url=await resizeToDataURL(f,kind==='favicon'?64:360);if(url.length>700000){flash('Image too large — try a smaller one');return;}await api('/settings',{method:'PUT',body:JSON.stringify({[kind]:url})});data.settings[kind]=url;flash(kind+' updated');boot();}catch(e){flash('Could not read image');}};inp.click();}
+function resizeToDataURL(file,maxW){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>{const img=new Image();img.onload=()=>{const sc=Math.min(1,maxW/img.width);const w=Math.round(img.width*sc),h=Math.round(img.height*sc);const cv=document.createElement('canvas');cv.width=w;cv.height=h;cv.getContext('2d').drawImage(img,0,0,w,h);res(cv.toDataURL('image/png'));};img.onerror=rej;img.src=r.result;};r.onerror=rej;r.readAsDataURL(file);});}
+async function removeImage(kind){await api('/settings',{method:'PUT',body:JSON.stringify({[kind]:''})});data.settings[kind]='';flash('Removed');boot();}
+
+/* ---------- COMMUNICATIONS (journey tabs + per-step editor) ---------- */
+const COLOR_OPTS=[['red','Red'],['orange','Orange'],['yellow','Yellow'],['lightgreen','Light green'],['darkgreen','Dark green']];
+function escA(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');}
+function commsView(){
+  const s=data.settings||{};
+  const on=s.email_notifications!=='0';
+  if(commsTab!=='repair'&&commsTab!=='sell')commsTab='repair';
+  const journeys=[['repair','Repair journey'],['sell','Resale journey']];
+  const tabs=journeys.map(([k,l])=>`<div class="comtab ${k===commsTab?'on':''}" onclick="setCommsTab('${k}')">${l}</div>`).join('');
+  const steps=flowStatuses(commsTab);
+  if(!steps.find(x=>x.key===commsStatus))commsStatus=(steps[0]||{}).key||null;
+  const cur=steps.find(x=>x.key===commsStatus);
+  const tpl=(data.templates||[]).find(t=>t.key===commsTab+':'+commsStatus)||{subject:'',body:''};
+  const editor=cur?`
+    <div class="card sec">
+      <div class="formrow">
+        <div class="f"><label>Status step</label>
+          <select onchange="commsStatus=this.value;render(commsView())">${steps.map(x=>`<option value="${x.key}" ${x.key===commsStatus?'selected':''}>${escA(x.label)}</option>`).join('')}</select></div>
+        <div class="f"><label>Colour badge</label>
+          <select id="c_color">${COLOR_OPTS.map(c=>`<option value="${c[0]}" ${cur.color===c[0]?'selected':''}>${c[1]}</option>`).join('')}</select></div>
+        <div class="f"><label>Preview</label><div class="previewcell">${statusBadge(commsTab,commsStatus)}</div></div>
+      </div>
+      <label class="fl">Step label (tracker &amp; badge)</label>
+      <input class="fw" id="c_label" value="${escA(cur.label)}">
+      <label class="fl">Email subject</label>
+      <input class="fw" id="c_subject" value="${escA(tpl.subject)}">
+      <label class="fl">Email message</label>
+      <textarea class="fw" rows="3" id="c_body">${escA(tpl.body)}</textarea>
+      <p class="hint">Placeholders: <code>{name}</code> <code>{ref}</code> <code>{device}</code> <code>{amount}</code>.</p>
+      <div class="actions"><button class="btn ink" onclick="saveCommsStep()">Save step</button>
+        <button class="del-btn" onclick="deleteStatus(${cur.id})">Delete step</button></div>
+    </div>
+    <div class="card sec">
+      <b>Add a step to the ${commsTab==='repair'?'repair':'resale'} journey</b>
+      <div class="formrow" style="margin-top:var(--s3)">
+        <div class="f"><label>Key (letters/numbers)</label><input id="ns_key" placeholder="e.g. shipped"></div>
+        <div class="f"><label>Label</label><input id="ns_label" placeholder="e.g. Shipped"></div>
+        <div class="f"><label>Colour</label><select id="ns_color">${COLOR_OPTS.map(c=>`<option value="${c[0]}">${c[1]}</option>`).join('')}</select></div>
+      </div>
+      <div class="actions"><button class="btn" onclick="addStatus()">Add step</button></div>
+    </div>`:`<div class="card sec"><div class="empty"><b>No steps yet</b><span>Add the first step for this journey.</span></div></div>`;
+  return `
+    <div class="card sec">
+      <div class="switchrow">
+        <div><b>Email the customer on every order update</b><p class="hint">When on, the customer is emailed at booking and at every status change, using these templates. Delivery is live when <code>RESEND_API_KEY</code>/<code>MAIL_FROM</code> are set, otherwise logged (demo).</p></div>
+        <label class="swt"><input type="checkbox" ${on?'checked':''} onchange="data.settings.email_notifications=this.checked?'1':'0';saveSetting('email_notifications',data.settings.email_notifications);render(commsView())"><span>${on?'On':'Off'}</span></label>
+      </div>
+    </div>
+    <div class="comtabs">${tabs}</div>
+    ${editor}`;
+}
+function setCommsTab(k){commsTab=k;commsStatus=null;render(commsView());}
+async function saveCommsStep(){
+  const cur=flowStatuses(commsTab).find(x=>x.key===commsStatus); if(!cur)return;
+  const color=document.getElementById('c_color').value;
+  const label=document.getElementById('c_label').value.trim();
+  const subject=document.getElementById('c_subject').value;
+  const body=document.getElementById('c_body').value;
+  if(!label){flash('Step label is required');return;}
+  try{
+    await api('/service/order-statuses/'+cur.id,{method:'PUT',body:JSON.stringify({label,color})});
+    await api('/order-templates/'+encodeURIComponent(commsTab+':'+commsStatus),{method:'PUT',body:JSON.stringify({label,subject,body})});
+    data.statuses=await api('/service/order-statuses');data.templates=await api('/order-templates');
+    flash('Saved');render(commsView());
+  }catch(e){flash(e.message);}
+}
+async function addStatus(){
+  const key=document.getElementById('ns_key').value.trim();
+  const label=document.getElementById('ns_label').value.trim();
+  const color=document.getElementById('ns_color').value;
+  if(!/^[a-z0-9_]+$/i.test(key)){flash('Key must be letters/numbers only');return;}
+  if(!label){flash('Label is required');return;}
+  try{
+    const st=await api('/service/order-statuses',{method:'POST',body:JSON.stringify({flow:commsTab,key,label,color})});
+    data.statuses=await api('/service/order-statuses');data.templates=await api('/order-templates');
+    commsStatus=st.key;flash('Step added');render(commsView());
+  }catch(e){flash(e.message);}
+}
+async function deleteStatus(id){
+  if(!confirm('Delete this step? Any orders using it must be reassigned first.'))return;
+  try{await api('/service/order-statuses/'+id,{method:'DELETE'});data.statuses=await api('/service/order-statuses');commsStatus=null;flash('Deleted');render(commsView());}
+  catch(e){flash(e.message);}
+}
+
+/* ---------- ACCESS (users, roles, permissions) ---------- */
+const ROLE_COLOR={superadmin:'darkgreen',operator:'orange',customer:'yellow'};
+function roleBadge(rk){return `<span class="badge2 ${ROLE_COLOR[rk]||'yellow'}">${esc(rk)}</span>`;}
+function accessView(){
+  const users=data.users||[],roles=data.roles||[];
+  const rows=users.map(u=>{
+    const title=esc(u.name||u.username||u.phone||('User #'+u.id));
+    const sub=[u.username&&('@'+u.username),u.email,u.phone].filter(Boolean).map(esc).join(' · ');
+    const chips=roles.map(r=>`<label class="rolechk"><input type="checkbox" data-uid="${u.id}" value="${r.key}" ${(u.roles||[]).includes(r.key)?'checked':''}> ${esc(r.name)}</label>`).join('');
+    return `<div class="card sec">
+      <div class="acchead"><div><b>${title}</b><div class="hint">${sub||'—'}</div></div>
+        <div class="accbadges">${(u.roles||[]).map(roleBadge).join(' ')}</div></div>
+      <div class="roleopts">${chips}</div>
+      <div class="actions"><button class="btn ink" onclick="saveRoles(${u.id})">Save roles</button></div>
+    </div>`;
+  }).join('');
+  return `
+    <div class="card sec"><b>Manage who can do what</b>
+      <p class="hint">Search any account in the database and assign roles. <b>Super Admin</b> = full admin panel + main app. <b>Operator</b> = Service Requests in the main app. <b>Customer</b> = booking only.</p>
+      <div class="searchbar"><input id="userq" placeholder="Search by name, email, phone or username…" value="${esc(accessQ)}" oninput="accessSearch(this.value)"></div>
+    </div>
+    ${users.length?rows:`<div class="card sec"><div class="empty"><b>No users found</b><span>Try a different search term.</span></div></div>`}`;
+}
+function accessSearch(q){accessQ=q;clearTimeout(accessTimer);accessTimer=setTimeout(async()=>{data.users=await api('/access/users?q='+encodeURIComponent(q));render(accessView());const el=document.getElementById('userq');if(el){el.focus();const v=el.value;el.value='';el.value=v;}},250);}
+async function saveRoles(uid){
+  const checked=[...document.querySelectorAll('input[data-uid="'+uid+'"]:checked')].map(x=>x.value);
+  try{await api('/access/users/'+uid+'/roles',{method:'PUT',body:JSON.stringify({roles:checked})});data.users=await api('/access/users?q='+encodeURIComponent(accessQ));flash('Roles updated');render(accessView());}
+  catch(e){flash(e.message);}
+}
+
+boot();
+</script>
+</body>
+</html>

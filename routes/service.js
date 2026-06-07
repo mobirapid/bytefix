@@ -1,0 +1,170 @@
+// Service Requests: configurable statuses, operator order management,
+// discussion comments + attachments, and ratings/reviews.
+const express = require('express');
+const db = require('../db');
+const { requireAdmin, requirePerm, userFromToken, permsOf, rolesOf } = require('./auth');
+const { notify } = require('./notify');
+const router = express.Router();
+
+const COLORS = ['red', 'orange', 'yellow', 'lightgreen', 'darkgreen'];
+const MAX_BYTES = 7 * 1024 * 1024; // 7 MB
+const OK_MIME = (m) => /^image\//.test(m) || m === 'application/pdf';
+
+/* ---------------- Configurable statuses ---------------- */
+// Public: storefront + admin both read these for badges and pipelines.
+router.get('/order-statuses', (req, res) => {
+  res.json(db.prepare('SELECT id,flow,key,label,color,sort FROM order_statuses ORDER BY flow,sort,id').all());
+});
+router.post('/order-statuses', requireAdmin, (req, res) => {
+  let { flow, key, label, color, sort } = req.body || {};
+  flow = String(flow || '').trim(); key = String(key || '').trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
+  label = String(label || '').trim(); color = COLORS.includes(color) ? color : 'orange';
+  if (!['repair', 'sell'].includes(flow)) return res.status(400).json({ error: 'flow must be repair or sell' });
+  if (!key) return res.status(400).json({ error: 'A status key is required' });
+  if (!label) return res.status(400).json({ error: 'A label is required' });
+  const exists = db.prepare('SELECT 1 FROM order_statuses WHERE flow=? AND key=?').get(flow, key);
+  if (exists) return res.status(400).json({ error: 'That status already exists for this journey' });
+  const n = (sort == null) ? (db.prepare('SELECT COALESCE(MAX(sort)+1,0) s FROM order_statuses WHERE flow=?').get(flow).s) : Number(sort);
+  const info = db.prepare('INSERT INTO order_statuses (flow,key,label,color,sort) VALUES (?,?,?,?,?)').run(flow, key, label, color, n);
+  // Ensure an email template row exists for the new step.
+  db.prepare('INSERT OR IGNORE INTO order_templates (key,type,status,label,subject,body) VALUES (?,?,?,?,?,?)')
+    .run(flow + ':' + key, flow, key, label, 'Update on your order · {ref}', 'Hi {name}, your {device} is now: ' + label + '. Reference: {ref}.');
+  res.json(db.prepare('SELECT * FROM order_statuses WHERE id=?').get(info.lastInsertRowid));
+});
+router.put('/order-statuses/:id', requireAdmin, (req, res) => {
+  const s = db.prepare('SELECT * FROM order_statuses WHERE id=?').get(Number(req.params.id));
+  if (!s) return res.status(404).json({ error: 'Status not found' });
+  let { label, color, sort } = req.body || {};
+  if (color != null && !COLORS.includes(color)) return res.status(400).json({ error: 'Invalid colour' });
+  db.prepare('UPDATE order_statuses SET label=COALESCE(?,label), color=COALESCE(?,color), sort=COALESCE(?,sort) WHERE id=?')
+    .run(label ?? null, color ?? null, (sort == null ? null : Number(sort)), s.id);
+  res.json(db.prepare('SELECT * FROM order_statuses WHERE id=?').get(s.id));
+});
+router.delete('/order-statuses/:id', requireAdmin, (req, res) => {
+  const s = db.prepare('SELECT * FROM order_statuses WHERE id=?').get(Number(req.params.id));
+  if (!s) return res.status(404).json({ error: 'Status not found' });
+  const used = db.prepare('SELECT COUNT(*) c FROM orders WHERE type=? AND status=?').get(s.flow, s.key).c;
+  if (used) return res.status(400).json({ error: `In use by ${used} order(s) — reassign them first.` });
+  db.prepare('DELETE FROM order_statuses WHERE id=?').run(s.id);
+  res.json({ ok: true });
+});
+
+/* ---------------- Operator order management ---------------- */
+// Operators (and superadmins) see and move every service request.
+router.get('/orders', requirePerm('service_requests'), (req, res) => {
+  res.json(db.prepare('SELECT * FROM orders ORDER BY id DESC LIMIT 300').all());
+});
+router.get('/orders/:ref', requirePerm('service_requests'), (req, res) => {
+  const o = db.prepare('SELECT * FROM orders WHERE ref=?').get(req.params.ref);
+  if (!o) return res.status(404).json({ error: 'Order not found' });
+  res.json(o);
+});
+router.put('/orders/:ref/status', requirePerm('service_requests'), (req, res) => {
+  const status = String(req.body.status || '').trim();
+  const o0 = db.prepare('SELECT * FROM orders WHERE ref=?').get(req.params.ref);
+  if (!o0) return res.status(404).json({ error: 'Order not found' });
+  const valid = db.prepare('SELECT 1 FROM order_statuses WHERE flow=? AND key=?').get(o0.type, status);
+  if (!valid) return res.status(400).json({ error: 'Unknown status for this journey' });
+  db.prepare('UPDATE orders SET status=? WHERE ref=?').run(status, req.params.ref);
+  const o = db.prepare('SELECT * FROM orders WHERE ref=?').get(req.params.ref);
+  notify(o, status);
+  // log a system comment in the discussion
+  db.prepare('INSERT INTO order_comments (order_ref,author_role,author_name,body) VALUES (?,?,?,?)')
+    .run(o.ref, 'system', 'System', 'Status changed to "' + status + '".');
+  res.json(o);
+});
+
+/* ---------------- Discussion: comments + attachments ---------------- */
+// Helper: who is acting, and may they touch this order?
+function actor(req) {
+  const u = userFromToken(req);
+  if (!u) return null;
+  const perms = permsOf(u.id);
+  const isOp = perms.includes('service_requests');
+  return { u, isOp, role: isOp ? 'operator' : 'customer' };
+}
+function ownsOrder(u, order) {
+  const last10 = String(u.phone || '').replace(/\D/g, '').slice(-10);
+  return last10 && String(order.customer_phone || '').replace(/\D/g, '').endsWith(last10);
+}
+
+// Public read by ref (order tracking is public by reference). Attachments as metadata.
+router.get('/orders/:ref/thread', (req, res) => {
+  const o = db.prepare('SELECT ref FROM orders WHERE ref=?').get(req.params.ref);
+  if (!o) return res.status(404).json({ error: 'Order not found' });
+  const comments = db.prepare('SELECT id,author_role,author_name,body,created_at FROM order_comments WHERE order_ref=? ORDER BY id').all(req.params.ref);
+  const att = db.prepare('SELECT id,comment_id,name,mime,size FROM order_attachments WHERE comment_id IN (SELECT id FROM order_comments WHERE order_ref=?)').all(req.params.ref);
+  const byC = {}; att.forEach(a => (byC[a.comment_id] = byC[a.comment_id] || []).push(a));
+  res.json(comments.map(c => ({ ...c, attachments: byC[c.id] || [] })));
+});
+
+// Post a comment (+ optional attachments). Customer (owner) or operator only.
+router.post('/orders/:ref/comments', (req, res) => {
+  const a = actor(req);
+  if (!a) return res.status(401).json({ error: 'Please sign in to comment.' });
+  const o = db.prepare('SELECT * FROM orders WHERE ref=?').get(req.params.ref);
+  if (!o) return res.status(404).json({ error: 'Order not found' });
+  if (!a.isOp && !ownsOrder(a.u, o)) return res.status(403).json({ error: 'This is not your order.' });
+
+  const body = String(req.body.body || '').trim();
+  const atts = Array.isArray(req.body.attachments) ? req.body.attachments : [];
+  if (!body && !atts.length) return res.status(400).json({ error: 'Write a message or attach a file.' });
+  if (atts.length > 5) return res.status(400).json({ error: 'Up to 5 attachments per message.' });
+
+  // Validate attachments before writing anything.
+  const decoded = [];
+  for (const f of atts) {
+    const mime = String(f.mime || '');
+    if (!OK_MIME(mime)) return res.status(400).json({ error: 'Only images and PDF files are allowed.' });
+    let buf;
+    try { buf = Buffer.from(String(f.data || '').split(',').pop(), 'base64'); }
+    catch (e) { return res.status(400).json({ error: 'Bad file data.' }); }
+    if (!buf.length) return res.status(400).json({ error: 'Empty file.' });
+    if (buf.length > MAX_BYTES) return res.status(400).json({ error: 'Each file must be 7MB or smaller.' });
+    decoded.push({ name: String(f.name || 'file').slice(0, 120), mime, size: buf.length, data: buf });
+  }
+
+  const id = db.tx(() => {
+    const cid = db.prepare('INSERT INTO order_comments (order_ref,author_user_id,author_role,author_name,body) VALUES (?,?,?,?,?)')
+      .run(o.ref, a.u.id, a.role, a.u.name || (a.isOp ? 'Operator' : 'Customer'), body).lastInsertRowid;
+    const ia = db.prepare('INSERT INTO order_attachments (comment_id,name,mime,size,data) VALUES (?,?,?,?,?)');
+    decoded.forEach(d => ia.run(cid, d.name, d.mime, d.size, d.data));
+    return cid;
+  });
+  const c = db.prepare('SELECT id,author_role,author_name,body,created_at FROM order_comments WHERE id=?').get(id);
+  c.attachments = db.prepare('SELECT id,comment_id,name,mime,size FROM order_attachments WHERE comment_id=?').all(id);
+  res.json(c);
+});
+
+// Download an attachment by id.
+router.get('/attachments/:id', (req, res) => {
+  const a = db.prepare('SELECT name,mime,data FROM order_attachments WHERE id=?').get(Number(req.params.id));
+  if (!a) return res.status(404).json({ error: 'Not found' });
+  res.setHeader('Content-Type', a.mime || 'application/octet-stream');
+  res.setHeader('Content-Disposition', 'inline; filename="' + (a.name || 'file').replace(/"/g, '') + '"');
+  res.send(Buffer.from(a.data));
+});
+
+/* ---------------- Ratings & reviews ---------------- */
+router.get('/orders/:ref/reviews', (req, res) => {
+  res.json(db.prepare('SELECT role,rating,review,created_at,updated_at FROM order_reviews WHERE order_ref=? ORDER BY role').all(req.params.ref));
+});
+router.post('/orders/:ref/reviews', (req, res) => {
+  const a = actor(req);
+  if (!a) return res.status(401).json({ error: 'Please sign in to review.' });
+  const o = db.prepare('SELECT * FROM orders WHERE ref=?').get(req.params.ref);
+  if (!o) return res.status(404).json({ error: 'Order not found' });
+  if (!a.isOp && !ownsOrder(a.u, o)) return res.status(403).json({ error: 'This is not your order.' });
+  const rating = Math.round(Number(req.body.rating));
+  const review = String(req.body.review || '').trim().slice(0, 2000);
+  if (!(rating >= 1 && rating <= 5)) return res.status(400).json({ error: 'Rating must be 1 to 5 stars.' });
+  db.prepare(`INSERT INTO order_reviews (order_ref,author_user_id,role,rating,review)
+              VALUES (?,?,?,?,?)
+              ON CONFLICT(order_ref,role) DO UPDATE SET
+                rating=excluded.rating, review=excluded.review,
+                author_user_id=excluded.author_user_id, updated_at=datetime('now')`)
+    .run(o.ref, a.u.id, a.role, rating, review);
+  res.json(db.prepare('SELECT role,rating,review,created_at,updated_at FROM order_reviews WHERE order_ref=? AND role=?').get(o.ref, a.role));
+});
+
+module.exports = router;

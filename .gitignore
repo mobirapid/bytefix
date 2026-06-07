@@ -1,0 +1,23 @@
+# Dependencies (reinstalled with `npm install` on any machine)
+node_modules/
+
+# Local SQLite database + WAL files (seeds fresh on first run)
+db/*.db
+db/*.db-wal
+db/*.db-shm
+
+# Local snapshots (full project copies — never commit; they also contain .env)
+backups/
+
+# Secrets & runtime
+.env
+.env.local
+*.log
+server.log
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
