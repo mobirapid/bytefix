@@ -362,7 +362,10 @@ function settingsView(){
     <div style="font-size:12px;color:var(--ink-soft);margin:6px 0 8px">When on, OTP SMS is sent &amp; verified by 2Factor (real SMS, no DLT needed to start). Get a free API key at 2factor.in. Leave Firebase off if you use this.</div>
     <div style="font-weight:600;font-size:12.5px;margin-bottom:5px">2Factor API key ${s.twofactor_api_key_set?'(saved — paste again to change)':'(not set)'}</div>
     <input class="w" style="width:100%;font-family:'JetBrains Mono',monospace;font-size:13px" placeholder="paste your 2Factor API key" onchange="if(this.value.trim()){saveSetting('twofactor_api_key',this.value.trim());this.value='';flash('Key saved')}">
-    <div style="font-size:12px;color:var(--ink-soft);margin-top:8px">The key is stored securely on the server and never shown again.</div>
+    <div style="font-size:12px;color:var(--ink-soft);margin:8px 0 5px">The key is stored securely on the server and never shown again.</div>
+    <div style="font-weight:600;font-size:12.5px;margin:6px 0 5px">SMS template name (recommended)</div>
+    <input class="w" style="width:100%;font-size:13px" value="${esc(s.twofactor_template||'')}" placeholder="exact template name from 2Factor (forces SMS, avoids voice call)" onchange="saveSetting('twofactor_template',this.value.trim())">
+    <div style="font-size:12px;color:var(--ink-soft);margin-top:8px">Create an <b>SMS OTP template</b> in the 2Factor dashboard and put its exact name here. Without it, 2Factor may deliver the code as a <b>voice call</b>.</div>
   </div>
   <div class="eyebrow">SEO</div>
   <div class="card" style="padding:14px 16px">

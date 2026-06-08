@@ -25,6 +25,11 @@ const twoFactorKey = () => {
 const twoFactorOn = () => {
   try { const r = db.prepare("SELECT value FROM settings WHERE key='otp_2factor'").get(); return !!(r && r.value === '1') && !!twoFactorKey(); } catch (e) { return false; }
 };
+// Optional SMS template name created in the 2Factor dashboard. Forces delivery via
+// that SMS template (otherwise 2Factor may use a default that rings as a voice call).
+const twoFactorTemplate = () => {
+  try { const r = db.prepare("SELECT value FROM settings WHERE key='twofactor_template'").get(); return (r && r.value || '').trim(); } catch (e) { return ''; }
+};
 
 // Static OTP for a pre-SMS pilot: a fixed code that always verifies, for any
 // number, with no SMS sent. Explicit STATIC_OTP wins; otherwise it defaults to
@@ -73,7 +78,11 @@ router.post('/send', async (req, res) => {
   if (twoFactorOn()) {
     try {
       const cc = process.env.SMS_COUNTRY_CODE || '91';
-      const r = await fetch(`https://2factor.in/API/V1/${encodeURIComponent(twoFactorKey())}/SMS/+${cc}${phone}/AUTOGEN`);
+      const tpl = twoFactorTemplate();
+      // /SMS/<phone>/AUTOGEN3/<template> forces SMS via your named template (no voice fallback).
+      const url = `https://2factor.in/API/V1/${encodeURIComponent(twoFactorKey())}/SMS/+${cc}${phone}/AUTOGEN3`
+        + (tpl ? '/' + encodeURIComponent(tpl) : '');
+      const r = await fetch(url);
       const d = await r.json().catch(() => ({}));
       if (d.Status !== 'Success') throw new Error(d.Details || ('2Factor ' + r.status));
       codes.set(phone, { session: d.Details, twofactor: true, expires: Date.now() + 5 * 60000, attempts: 0, lastSent: Date.now() });
