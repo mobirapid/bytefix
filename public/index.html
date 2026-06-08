@@ -64,7 +64,7 @@
 const API='/api';
 const INR=n=>'₹'+Number(Math.round(n||0)).toLocaleString('en-IN');
 const SLOTS=['Today, 4–6 PM','Tomorrow, 10–12','Tomorrow, 2–4 PM','Sat, 11–1 PM','Sat, 5–7 PM','Sun, 12–2 PM'];
-const MODES=[['doorstep','🏠','Doorstep repair','Technician comes to you','Free'],['pickup','🚚','Pickup & drop','We collect, repair, return','Free'],['walkin','🏪','Store walk-in','Fastest turnaround','Free']];
+const MODES=[['pickup','🚚','Pickup & drop','We collect, repair, return','Free'],['walkin','🏪','Store walk-in','Fastest turnaround','Free']];
 let CATALOG=[],CONDITIONS=[],SET={},S={},stack=[],mode='home',corpIntent='sell',STAT=[];
 /* DB-driven status helpers + colour badge (shared look with admin) */
 function flowSteps(flow){return STAT.filter(s=>s.flow===flow).slice().sort((a,b)=>a.sort-b.sort);}
@@ -406,7 +406,7 @@ async function pickIssues(){S.issueList=(await api('/models/'+S.model+'/repair-i
   <div class="list">${S.issueList.length?S.issueList.map(it=>{const sel=S.issues.includes(it.issue_id);return `<div class="opt ${sel?'sel':''}" onclick="togIssue(${it.issue_id})"><div class="check">✓</div><div class="meta"><b>${esc(it.name)}</b><span>ETA ${esc(it.eta)}</span></div><span class="price">${INR(it.price)}</span></div>`;}).join(''):`<div class="muted-card">No repair options are listed for this model yet — please use “Track order” help or contact us and we’ll assist.</div>`}</div>
   <div class="dock"><button class="btn green" ${S.issues.length?'':'disabled'} onclick="nav(pickMode)">Choose service ${S.issues.length?`<span class="pill">${S.issues.length}</span>`:''}</button></div>`;}
 function togIssue(id){const k=S.issues.indexOf(id);if(k>=0)S.issues.splice(k,1);else S.issues.push(id);renderFlow();}
-function pickMode(){if(!S.svc)S.svc='doorstep';return prog(5)+devStrip()+`<div class="step-h">How do you want it done?</div>
+function pickMode(){if(!S.svc)S.svc='pickup';return prog(5)+devStrip()+`<div class="step-h">How do you want it done?</div>
   <div class="modes">${MODES.map(m=>`<div class="mode ${S.svc===m[0]?'sel':''}" onclick="S.svc='${m[0]}';renderFlow()"><span class="em">${m[1]}</span><div class="meta"><b>${m[2]}</b><span>${m[3]}</span></div><span class="tag">${m[4]}</span></div>`).join('')}</div>
   <div class="dock"><button class="btn green" onclick="nav(fixQuote)">See my quote →</button></div>`;}
 async function fixQuote(){const q=await api('/quotes/repair',{method:'POST',body:JSON.stringify({model_id:S.model,issue_ids:S.issues})});S.amount=q.total;S.quote=q;
