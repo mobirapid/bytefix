@@ -153,11 +153,16 @@ function catalogView(){
   </div>
   ${c?`<div class="eyebrow">${esc(c.name)} · brands & models</div>
   ${c.brands.map(b=>`<div class="card">
-    <div class="brandhead">${esc(b.name)}<button class="del" style="margin-left:auto" onclick="delBrand(${b.id})">×</button></div>
+    <div class="brandhead">${esc(b.name)}
+      <label class="appchk" style="margin-left:auto" title="Available for Repair"><input type="checkbox" ${b.for_repair?'checked':''} onchange="updBrand(${b.id},'for_repair',this.checked?1:0)"> Repair</label>
+      <label class="appchk" title="Available for Resale"><input type="checkbox" ${b.for_sell?'checked':''} onchange="updBrand(${b.id},'for_sell',this.checked?1:0)"> Resale</label>
+      <button class="del" style="margin-left:10px" onclick="delBrand(${b.id})">×</button></div>
     ${b.models.map(m=>`<div class="modrow">
       <input class="flat nm" value="${esc(m.name)}" onchange="updModel(${m.id},'name',this.value)">
       <span style="font-size:11px;color:var(--ink-soft)">base ₹</span>
       <input class="num" type="number" value="${m.base_value}" onchange="updModel(${m.id},'base_value',+this.value)">
+      <label class="appchk" title="Available for Repair"><input type="checkbox" ${m.for_repair?'checked':''} onchange="updModel(${m.id},'for_repair',this.checked?1:0)"> R</label>
+      <label class="appchk" title="Available for Resale"><input type="checkbox" ${m.for_sell?'checked':''} onchange="updModel(${m.id},'for_sell',this.checked?1:0)"> S</label>
       <button class="del" onclick="delModel(${m.id})">×</button></div>`).join('')}
     <div class="addbar"><input id="nm_name_${b.id}" placeholder="New model"><input id="nm_base_${b.id}" class="num" type="number" placeholder="base ₹"><button class="btn sm" onclick="addModel(${b.id})">＋ Model</button></div>
   </div>`).join('')}
@@ -168,6 +173,7 @@ async function delCategory(id){if(!confirm('Delete this category and all its bra
 function pickCatIcon(id){const inp=document.createElement('input');inp.type='file';inp.accept='image/*';inp.onchange=async()=>{const f=inp.files[0];if(!f)return;try{const url=await resizeToDataURL(f,96);if(url.length>300000){flash('Icon too large — try a smaller image');return;}await api('/categories/'+id,{method:'PUT',body:JSON.stringify({emoji:url})});flash('Icon updated');boot();}catch(e){flash('Could not read image');}};inp.click();}
 async function addCategory(){const name=document.getElementById('nc_name').value.trim();let slug=document.getElementById('nc_slug').value.trim();if(!name)return flash('Enter a name');if(!slug)slug=name.toLowerCase().replace(/\s+/g,'-');try{const c=await api('/categories',{method:'POST',body:JSON.stringify({slug,name,emoji:document.getElementById('nc_emoji').value})});adminCat=c.id;flash('Category added');boot();}catch(e){flash(e.message);}}
 async function addBrand(cid){const name=document.getElementById('nb_name').value.trim();if(!name)return flash('Enter a brand name');await api('/brands',{method:'POST',body:JSON.stringify({category_id:cid,name})});flash('Brand added');boot();}
+async function updBrand(id,f,v){await api('/brands/'+id,{method:'PUT',body:JSON.stringify({[f]:v})});flash('Saved');}
 async function delBrand(id){if(!confirm('Delete this brand and all its models?'))return;await api('/brands/'+id,{method:'DELETE'});flash('Brand deleted');boot();}
 async function addModel(bid){const name=document.getElementById('nm_name_'+bid).value.trim();const base=+document.getElementById('nm_base_'+bid).value||0;if(!name)return flash('Enter a model name');await api('/models',{method:'POST',body:JSON.stringify({brand_id:bid,name,base_value:base})});flash('Model added');boot();}
 async function updModel(id,f,v){await api('/models/'+id,{method:'PUT',body:JSON.stringify({[f]:v})});flash('Saved');}

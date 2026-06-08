@@ -56,14 +56,17 @@ router.delete('/categories/:id', requireAdmin, (req, res) => {
 
 // brands
 router.post('/brands', requireAdmin, (req, res) => {
-  const { category_id, name, sort = 0 } = req.body;
+  const { category_id, name, sort = 0, for_repair = 1, for_sell = 1 } = req.body;
   if (!category_id || !name) return res.status(400).json({ error: 'category_id and name required' });
-  const info = db.prepare('INSERT INTO brands (category_id,name,sort) VALUES (?,?,?)').run(category_id, name, sort);
+  const info = db.prepare('INSERT INTO brands (category_id,name,sort,for_repair,for_sell) VALUES (?,?,?,?,?)')
+    .run(category_id, name, sort, for_repair ? 1 : 0, for_sell ? 1 : 0);
   res.json(db.prepare('SELECT * FROM brands WHERE id=?').get(info.lastInsertRowid));
 });
 router.put('/brands/:id', requireAdmin, (req, res) => {
-  db.prepare('UPDATE brands SET name=COALESCE(?,name), sort=COALESCE(?,sort) WHERE id=?')
-    .run(req.body.name ?? null, req.body.sort ?? null, req.params.id);
+  const { name, sort, for_repair, for_sell } = req.body;
+  const norm = v => v == null ? null : (v ? 1 : 0);
+  db.prepare('UPDATE brands SET name=COALESCE(?,name), sort=COALESCE(?,sort), for_repair=COALESCE(?,for_repair), for_sell=COALESCE(?,for_sell) WHERE id=?')
+    .run(name ?? null, sort ?? null, norm(for_repair), norm(for_sell), req.params.id);
   res.json(db.prepare('SELECT * FROM brands WHERE id=?').get(req.params.id));
 });
 router.delete('/brands/:id', requireAdmin, (req, res) => {
@@ -73,15 +76,17 @@ router.delete('/brands/:id', requireAdmin, (req, res) => {
 
 // models
 router.post('/models', requireAdmin, (req, res) => {
-  const { brand_id, name, base_value = 0 } = req.body;
+  const { brand_id, name, base_value = 0, for_repair = 1, for_sell = 1 } = req.body;
   if (!brand_id || !name) return res.status(400).json({ error: 'brand_id and name required' });
-  const info = db.prepare('INSERT INTO models (brand_id,name,base_value) VALUES (?,?,?)').run(brand_id, name, base_value);
+  const info = db.prepare('INSERT INTO models (brand_id,name,base_value,for_repair,for_sell) VALUES (?,?,?,?,?)')
+    .run(brand_id, name, base_value, for_repair ? 1 : 0, for_sell ? 1 : 0);
   res.json(db.prepare('SELECT * FROM models WHERE id=?').get(info.lastInsertRowid));
 });
 router.put('/models/:id', requireAdmin, (req, res) => {
-  const { name, base_value, active } = req.body;
-  db.prepare('UPDATE models SET name=COALESCE(?,name), base_value=COALESCE(?,base_value), active=COALESCE(?,active) WHERE id=?')
-    .run(name ?? null, base_value ?? null, active ?? null, req.params.id);
+  const { name, base_value, active, for_repair, for_sell } = req.body;
+  const norm = v => v == null ? null : (v ? 1 : 0);
+  db.prepare('UPDATE models SET name=COALESCE(?,name), base_value=COALESCE(?,base_value), active=COALESCE(?,active), for_repair=COALESCE(?,for_repair), for_sell=COALESCE(?,for_sell) WHERE id=?')
+    .run(name ?? null, base_value ?? null, active ?? null, norm(for_repair), norm(for_sell), req.params.id);
   res.json(db.prepare('SELECT * FROM models WHERE id=?').get(req.params.id));
 });
 router.delete('/models/:id', requireAdmin, (req, res) => {

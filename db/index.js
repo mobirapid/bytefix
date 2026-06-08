@@ -23,12 +23,14 @@ CREATE TABLE IF NOT EXISTS categories (
 CREATE TABLE IF NOT EXISTS brands (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
-  name TEXT NOT NULL, sort INTEGER DEFAULT 0
+  name TEXT NOT NULL, sort INTEGER DEFAULT 0,
+  for_repair INTEGER DEFAULT 1, for_sell INTEGER DEFAULT 1
 );
 CREATE TABLE IF NOT EXISTS models (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   brand_id INTEGER NOT NULL REFERENCES brands(id) ON DELETE CASCADE,
-  name TEXT NOT NULL, base_value INTEGER NOT NULL DEFAULT 0, active INTEGER DEFAULT 1
+  name TEXT NOT NULL, base_value INTEGER NOT NULL DEFAULT 0, active INTEGER DEFAULT 1,
+  for_repair INTEGER DEFAULT 1, for_sell INTEGER DEFAULT 1
 );
 CREATE TABLE IF NOT EXISTS repair_issues (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -87,6 +89,10 @@ for (const stmt of [
   "ALTER TABLE users ADD COLUMN password TEXT",   // staff password (plaintext demo)
   "ALTER TABLE categories ADD COLUMN for_repair INTEGER DEFAULT 1",  // show in Repair flow
   "ALTER TABLE categories ADD COLUMN for_sell INTEGER DEFAULT 1",    // show in Resale flow
+  "ALTER TABLE brands ADD COLUMN for_repair INTEGER DEFAULT 1",
+  "ALTER TABLE brands ADD COLUMN for_sell INTEGER DEFAULT 1",
+  "ALTER TABLE models ADD COLUMN for_repair INTEGER DEFAULT 1",
+  "ALTER TABLE models ADD COLUMN for_sell INTEGER DEFAULT 1",
 ]) { try { db.exec(stmt); } catch (e) { /* column already exists — ignore */ } }
 
 db.exec(`
