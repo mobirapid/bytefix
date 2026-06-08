@@ -35,7 +35,20 @@
     <button class="cta signupbtn" id="signupBtn" onclick="signupClick()">Sign up</button>
     <button class="cta green" onclick="scrollStart()">Get a quote</button>
   </div>
-  <button class="burger" onclick="openTrack()">☰</button>
+  <button class="burger" onclick="toggleMenu()" aria-label="Menu">☰</button>
+</div>
+<div id="mnav" class="mnav">
+  <a href="#how" onclick="closeMenu();showHome()">How it works</a>
+  <a href="#cats" onclick="closeMenu();showHome()">Devices</a>
+  <a href="#faq" onclick="closeMenu();showHome()">FAQ</a>
+  <a href="#" onclick="closeMenu();showCorporate();return false">For business</a>
+  <a href="#" onclick="closeMenu();openTrack();return false">Track order</a>
+  <a id="mSvc" href="#" onclick="closeMenu();showService();return false" style="display:none">Service Requests</a>
+  <button class="city" onclick="closeMenu();openCityModal()">◷ Choose city</button>
+  <a id="mStaff" href="#" onclick="closeMenu();staffLoginFlow();return false">Staff login</a>
+  <button class="cta authbtn" id="authBtnM" onclick="closeMenu();authClick()">Log in</button>
+  <button class="cta signupbtn" id="signupBtnM" onclick="closeMenu();signupClick()">Sign up</button>
+  <button class="cta green" onclick="closeMenu();scrollStart()">Get a quote</button>
 </div></header>
 <div id="view"><div class="flowwrap center" style="color:var(--ink-soft)">Loading…</div></div>
 
@@ -95,7 +108,14 @@ function clearSession(){SESSION='';ME=null;try{localStorage.removeItem('regear_s
 function first(n){return String(n||'you').trim().split(' ')[0]||'you';}
 function syncAuth(){const b=document.getElementById('authBtn'),su=document.getElementById('signupBtn');if(b)b.textContent=ME?('Hi, '+first(ME.name)):'Log in';if(su)su.style.display=ME?'none':'';
   const sv=document.getElementById('svcLink');if(sv)sv.style.display=hasPerm('service_requests')?'':'none';
-  const st=document.getElementById('staffLink');if(st)st.style.display=ME?'none':'';}
+  const st=document.getElementById('staffLink');if(st)st.style.display=ME?'none':'';
+  // mobile menu mirror
+  const bm=document.getElementById('authBtnM');if(bm)bm.textContent=ME?('Hi, '+first(ME.name)):'Log in';
+  const sm=document.getElementById('signupBtnM');if(sm)sm.style.display=ME?'none':'';
+  const svm=document.getElementById('mSvc');if(svm)svm.style.display=hasPerm('service_requests')?'':'none';
+  const stm=document.getElementById('mStaff');if(stm)stm.style.display=ME?'none':'';}
+function toggleMenu(){const m=document.getElementById('mnav');if(m)m.classList.toggle('open');}
+function closeMenu(){const m=document.getElementById('mnav');if(m)m.classList.remove('open');}
 function authClick(){if(ME){showProfile();return;}S.authMode='login';S.fromBooking=false;enterFlow(loginPhone);}
 function signupClick(){S.authMode='signup';S.fromBooking=false;enterFlow(loginPhone);}
 function loginPhone(){const su=S.authMode==='signup';return `<div class="step-h">${su?'Create your account':'Log in or sign up'}</div><p class="fsub">${su?'Sign up with Google, or use your phone number.':'Continue with Google, or get a one-time code on your phone.'}</p>

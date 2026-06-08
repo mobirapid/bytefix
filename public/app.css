@@ -175,6 +175,8 @@ footer a:hover,footer .li:hover{color:#fff}
 
 @media(max-width:900px){
   .nav .links{display:none}.burger{display:block}
+  .nav .right{display:none}            /* desktop button cluster hidden; use the menu */
+  .container{padding:0 16px}
   .hero-grid{grid-template-columns:1fr}.hero-art{display:none}.hero h1{font-size:42px}
   .steps,.feat-grid,.testi-grid{grid-template-columns:1fr}
   .cat-grid{grid-template-columns:repeat(2,1fr)}
@@ -326,3 +328,16 @@ input.invalid,select.invalid,textarea.invalid{border-color:#C0392B!important;bac
 .star.on{color:#E9A100}
 .rev-mine .star{cursor:pointer}
 .rev-mine textarea{width:100%;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-family:inherit;font-size:14px;resize:vertical;margin-top:var(--s2)}
+
+/* ===== Mobile dropdown menu (behind the ☰) ===== */
+html,body{max-width:100%;overflow-x:hidden}   /* safety net against horizontal scroll */
+.mnav{display:none}
+.mnav.open{display:flex}
+.mnav a,.mnav .city,.mnav .cta{display:block;width:100%;text-align:left;padding:13px 8px;font-size:15px;font-weight:600;color:var(--ink);background:none;border:none;border-bottom:1px solid var(--line-2);cursor:pointer;border-radius:0}
+.mnav .cta{margin-top:12px;border-bottom:none;text-align:center;border-radius:12px}
+.mnav .cta.green{color:#fff}
+@media(max-width:900px){
+  header.site{position:sticky}
+  .mnav.open{position:absolute;left:0;right:0;top:100%;flex-direction:column;background:var(--card);
+    border-bottom:1px solid var(--line);box-shadow:var(--shadow-lg);padding:8px 16px 18px;z-index:120}
+}
