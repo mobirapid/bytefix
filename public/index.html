@@ -118,18 +118,47 @@ function toggleMenu(){const m=document.getElementById('mnav');if(m)m.classList.t
 function closeMenu(){const m=document.getElementById('mnav');if(m)m.classList.remove('open');}
 function authClick(){if(ME){showProfile();return;}S.authMode='login';S.fromBooking=false;enterFlow(loginPhone);}
 function signupClick(){S.authMode='signup';S.fromBooking=false;enterFlow(loginPhone);}
+/* ---- Phone OTP layer: Firebase when enabled in admin, else server OTP ---- */
+function fbConfig(){try{return JSON.parse(SET.firebase_config||'{}');}catch(e){return {};}}
+function fbEnabled(){const c=fbConfig();return SET.otp_firebase==='1'&&c&&c.apiKey&&c.projectId;}
+let _fbReady=null,_fbAuth=null;
+function loadFirebase(){if(_fbReady)return _fbReady;_fbReady=new Promise((res,rej)=>{
+  const add=(src,cb)=>{const s=document.createElement('script');s.src=src;s.onload=cb;s.onerror=()=>rej(new Error('Firebase failed to load'));document.head.appendChild(s);};
+  add('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js',()=>add('https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js',()=>{
+    try{if(!firebase.apps.length)firebase.initializeApp(fbConfig());_fbAuth=firebase.auth();res();}catch(e){rej(e);}}));
+});return _fbReady;}
+function e164(){return (S.dial||'+91')+String(S.phone||'').replace(/\D/g,'');}
+async function otpSend(){
+  if(fbEnabled()){
+    await loadFirebase();
+    if(!document.getElementById('fb-recaptcha')){const d=document.createElement('div');d.id='fb-recaptcha';document.body.appendChild(d);}
+    if(!window._fbVerifier)window._fbVerifier=new firebase.auth.RecaptchaVerifier('fb-recaptcha',{size:'invisible'});
+    S._fbConfirm=await _fbAuth.signInWithPhoneNumber(e164(),window._fbVerifier);
+    return {dev_code:''};
+  }
+  return await api('/otp/send',{method:'POST',body:JSON.stringify({phone:S.phone})});
+}
+async function otpVerify(code){
+  if(fbEnabled()){
+    if(!S._fbConfirm)throw new Error('Please request a code first');
+    const cred=await S._fbConfirm.confirm(code);
+    const idToken=await cred.user.getIdToken();
+    return await api('/otp/firebase',{method:'POST',body:JSON.stringify({idToken})});
+  }
+  return await api('/otp/verify',{method:'POST',body:JSON.stringify({phone:S.phone,code})});
+}
 function loginPhone(){const su=S.authMode==='signup';return `<div class="step-h">${su?'Create your account':'Log in or sign up'}</div><p class="fsub">${su?'Sign up with Google, or use your phone number.':'Continue with Google, or get a one-time code on your phone.'}</p>
   <div id="gsection"><div class="gwrap"><div id="gbtn"></div></div><div class="ordiv"><span>or use your phone</span></div></div>
   <div class="field"><label>Mobile number</label><div class="ccrow"><select id="lg_cc" class="cc">${ccOptions(S.dial)}</select><input id="lg_phone" placeholder="10-digit mobile" inputmode="tel" value="${esc(S.phone||'')}"></div></div>
   <div class="dock"><button class="btn green" id="lgbtn" onclick="loginSendOtp()">Send code →</button></div>`;}
 async function loginSendOtp(){clearErrs();S.dial=val('lg_cc')||'+91';S.phone=val('lg_phone');const d=S.phone.replace(/\D/g,'');if(d.length<(S.dial==='+91'?10:7)){setErr('lg_phone','Enter a valid mobile number');return;}
-  try{const r=await api('/otp/send',{method:'POST',body:JSON.stringify({phone:S.phone})});S.devCode=r.dev_code||'';S.fromBooking=false;nav(loginOtp);}catch(e){alert(e.message);}}
+  try{const r=await otpSend();S.devCode=r.dev_code||'';S.fromBooking=false;nav(loginOtp);}catch(e){alert(e.message);}}
 function loginOtp(){return `<div class="step-h">Enter your code</div><p class="fsub">Sent to <b>${esc(S.phone)}</b>.</p>
   ${S.devCode?`<div class="muted-card" style="color:var(--green)">Demo code: <b style="font-family:'JetBrains Mono'">${S.devCode}</b></div>`:''}
   <div class="field"><label>One-time code</label><input id="lg_code" inputmode="numeric" maxlength="6" placeholder="––––––" style="letter-spacing:8px;text-align:center;font-family:'JetBrains Mono';font-size:22px"></div>
   <div class="dock"><button class="btn green" id="lgvbtn" onclick="loginVerify()">Verify →</button><button class="btn btn-ghost" onclick="loginSendOtp()">Resend code</button></div>`;}
 async function loginVerify(){const code=val('lg_code');if(code.length<4)return alert('Enter the code');const btn=document.getElementById('lgvbtn');btn.textContent='Verifying…';btn.disabled=true;
-  try{const r=await api('/otp/verify',{method:'POST',body:JSON.stringify({phone:S.phone,code})});S.booking_token=r.token;
+  try{const r=await otpVerify(code);S.booking_token=r.token;
     const a=await api('/account/resolve',{method:'POST',body:JSON.stringify({booking_token:S.booking_token})});
     if(a.exists){const s=await api('/account/save',{method:'POST',body:JSON.stringify({booking_token:S.booking_token})});setSession(s.session,s.user);showProfile();}
     else{nav(loginSignup);}
@@ -203,12 +232,12 @@ async function renderMyOrders(){const el=document.getElementById('heroRight');if
 function addPhone(){return `<div class="step-h">Add your mobile</div><p class="fsub">Verify your number so your bookings appear in your account.</p>
   <div class="field"><label>Mobile number</label><div class="ccrow"><select id="ap_cc" class="cc">${ccOptions(S.dial)}</select><input id="ap_phone" placeholder="10-digit mobile" inputmode="tel"></div></div>
   <div class="dock"><button class="btn green" id="apbtn" onclick="addPhoneSend()">Send code →</button></div>`;}
-async function addPhoneSend(){clearErrs();S.dial=val('ap_cc')||'+91';S.phone=val('ap_phone');const d=S.phone.replace(/\D/g,'');if(d.length<(S.dial==='+91'?10:7)){setErr('ap_phone','Enter a valid mobile number');return;}try{const r=await api('/otp/send',{method:'POST',body:JSON.stringify({phone:S.phone})});S.devCode=r.dev_code||'';nav(addPhoneOtp);}catch(e){alert(e.message);}}
+async function addPhoneSend(){clearErrs();S.dial=val('ap_cc')||'+91';S.phone=val('ap_phone');const d=S.phone.replace(/\D/g,'');if(d.length<(S.dial==='+91'?10:7)){setErr('ap_phone','Enter a valid mobile number');return;}try{const r=await otpSend();S.devCode=r.dev_code||'';nav(addPhoneOtp);}catch(e){alert(e.message);}}
 function addPhoneOtp(){return `<div class="step-h">Enter your code</div><p class="fsub">Sent to <b>${esc(S.phone)}</b>.</p>${S.devCode?`<div class="muted-card" style="color:var(--green)">Demo code: <b style="font-family:'JetBrains Mono'">${S.devCode}</b></div>`:''}
   <div class="field"><label>One-time code</label><input id="ap_code" inputmode="numeric" maxlength="6" placeholder="––––––" style="letter-spacing:8px;text-align:center;font-family:'JetBrains Mono';font-size:22px"></div>
   <div class="dock"><button class="btn green" id="apvbtn" onclick="addPhoneVerify()">Verify →</button><button class="btn btn-ghost" onclick="addPhoneSend()">Resend code</button></div>`;}
 async function addPhoneVerify(){const code=val('ap_code');if(code.length<4)return alert('Enter the code');const btn=document.getElementById('apvbtn');btn.textContent='Verifying…';btn.disabled=true;
-  try{const r=await api('/otp/verify',{method:'POST',body:JSON.stringify({phone:S.phone,code})});const m=await aapi('/account/attach-phone',{method:'POST',body:JSON.stringify({booking_token:r.token})});ME=m.user;syncAuth();toast('Mobile added');showProfile();}
+  try{const r=await otpVerify(code);const m=await aapi('/account/attach-phone',{method:'POST',body:JSON.stringify({booking_token:r.token})});ME=m.user;syncAuth();toast('Mobile added');showProfile();}
   catch(e){btn.disabled=false;btn.textContent='Verify →';alert(e.message);}}
 async function api(p,o={}){const r=await fetch(API+p,{headers:{'Content-Type':'application/json'},...o});if(!r.ok)throw new Error((await r.json().catch(()=>({}))).error||'Error');return r.json();}
 const cat=id=>CATALOG.find(c=>c.id===id);
@@ -453,14 +482,14 @@ function startOtp(){
 /* OTP — fully backend-owned (routes/otp.js). To send real SMS later, plug a
    provider into deliver() in that file; no frontend change needed. */
 async function sendOtp(advance){
-  try{const r=await api('/otp/send',{method:'POST',body:JSON.stringify({phone:S.phone})});S.devCode=r.dev_code||'';S.otpMsg=advance?'':'A new code has been sent';if(advance)nav(otpScreen);else renderFlow();}
+  try{const r=await otpSend();S.devCode=r.dev_code||'';S.otpMsg=advance?'':'A new code has been sent';if(advance)nav(otpScreen);else renderFlow();}
   catch(e){alert(e.message);}
 }
 async function verifyOtp(){
   const code=((document.getElementById('otp_code')||{}).value||'').trim();
   if(code.length<4)return alert('Enter the code');
   const btn=document.getElementById('vbtn');btn.textContent='Verifying…';btn.disabled=true;
-  try{const r=await api('/otp/verify',{method:'POST',body:JSON.stringify({phone:S.phone,code})});S.booking_token=r.token;
+  try{const r=await otpVerify(code);S.booking_token=r.token;
     if(ME&&SESSION){try{const m=await aapi('/account/attach-phone',{method:'POST',body:JSON.stringify({booking_token:S.booking_token})});ME=m.user;syncAuth();}catch(e){}await placeOrder();}
     else{const a=await api('/account/resolve',{method:'POST',body:JSON.stringify({booking_token:S.booking_token})});
       if(a.exists){const s=await api('/account/save',{method:'POST',body:JSON.stringify({booking_token:S.booking_token,name:S.name,email:S.email,city:CITY})});setSession(s.session,s.user);await placeOrder();}

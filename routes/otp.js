@@ -1,5 +1,6 @@
 const express = require('express');
 const crypto = require('crypto');
+const db = require('../db');
 const router = express.Router();
 
 // In-memory stores — fine for OTPs/tokens since they're short-lived and ephemeral.
@@ -90,6 +91,58 @@ router.post('/verify', (req, res) => {
   const token = crypto.randomBytes(16).toString('hex');
   tokens.set(token, { phone, expires: Date.now() + 15 * 60000 });
   res.json({ verified: true, token });
+});
+
+// ---- Firebase Phone Auth: verify the client's ID token, then mint our booking token ----
+// No external dependency: the JWT is verified against Google's public x509 certs.
+let _certCache = { at: 0, keys: null };
+async function googleCerts() {
+  if (_certCache.keys && Date.now() - _certCache.at < 3600000) return _certCache.keys;
+  const r = await fetch('https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com');
+  const keys = await r.json();
+  _certCache = { at: Date.now(), keys };
+  return keys;
+}
+function firebaseProjectId() {
+  try {
+    const row = db.prepare("SELECT value FROM settings WHERE key='firebase_config'").get();
+    if (row && row.value) { const c = JSON.parse(row.value); if (c.projectId) return c.projectId; }
+  } catch (e) {}
+  return process.env.FIREBASE_PROJECT_ID || '';
+}
+async function verifyFirebaseToken(idToken) {
+  const pid = firebaseProjectId();
+  if (!pid) throw new Error('Firebase not configured');
+  const parts = String(idToken || '').split('.');
+  if (parts.length !== 3) throw new Error('Malformed token');
+  const header = JSON.parse(Buffer.from(parts[0], 'base64url').toString());
+  const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString());
+  const certs = await googleCerts();
+  const pem = certs[header.kid];
+  if (!pem) throw new Error('Unknown signing key');
+  const ok = crypto.verify('RSA-SHA256', Buffer.from(parts[0] + '.' + parts[1]),
+    crypto.createPublicKey(pem), Buffer.from(parts[2], 'base64url'));
+  if (!ok) throw new Error('Bad signature');
+  const now = Math.floor(Date.now() / 1000);
+  if (payload.aud !== pid) throw new Error('Wrong audience');
+  if (payload.iss !== 'https://securetoken.google.com/' + pid) throw new Error('Wrong issuer');
+  if (payload.exp < now) throw new Error('Token expired');
+  if (!payload.phone_number) throw new Error('No phone number in token');
+  return payload.phone_number;
+}
+
+// POST /api/otp/firebase { idToken } -> { verified, token, phone }
+router.post('/firebase', async (req, res) => {
+  try {
+    const phoneE164 = await verifyFirebaseToken(req.body.idToken);
+    const phone = norm(phoneE164);
+    const token = crypto.randomBytes(16).toString('hex');
+    tokens.set(token, { phone, expires: Date.now() + 15 * 60000 });
+    res.json({ verified: true, token, phone });
+  } catch (e) {
+    console.error('[OTP firebase]', e.message);
+    res.status(401).json({ error: 'Could not verify phone sign-in.' });
+  }
 });
 
 // used by the orders route to enforce verification before creating a booking
