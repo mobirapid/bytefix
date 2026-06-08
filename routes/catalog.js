@@ -33,17 +33,20 @@ router.get('/brands/:id/models', (req, res) =>
 
 // categories
 router.post('/categories', requireAdmin, (req, res) => {
-  const { slug, name, emoji = '', sort = 0 } = req.body;
+  const { slug, name, emoji = '', sort = 0, for_repair = 1, for_sell = 1 } = req.body;
   if (!slug || !name) return res.status(400).json({ error: 'slug and name required' });
   try {
-    const info = db.prepare('INSERT INTO categories (slug,name,emoji,sort) VALUES (?,?,?,?)').run(slug, name, emoji, sort);
+    const info = db.prepare('INSERT INTO categories (slug,name,emoji,sort,for_repair,for_sell) VALUES (?,?,?,?,?,?)')
+      .run(slug, name, emoji, sort, for_repair ? 1 : 0, for_sell ? 1 : 0);
     res.json(db.prepare('SELECT * FROM categories WHERE id=?').get(info.lastInsertRowid));
   } catch (e) { res.status(400).json({ error: 'Slug must be unique' }); }
 });
 router.put('/categories/:id', requireAdmin, (req, res) => {
-  const { name, emoji, sort, active } = req.body;
-  db.prepare('UPDATE categories SET name=COALESCE(?,name), emoji=COALESCE(?,emoji), sort=COALESCE(?,sort), active=COALESCE(?,active) WHERE id=?')
-    .run(name ?? null, emoji ?? null, sort ?? null, active ?? null, req.params.id);
+  const { name, emoji, sort, active, for_repair, for_sell } = req.body;
+  const norm = v => v == null ? null : (v ? 1 : 0);
+  db.prepare(`UPDATE categories SET name=COALESCE(?,name), emoji=COALESCE(?,emoji), sort=COALESCE(?,sort),
+              active=COALESCE(?,active), for_repair=COALESCE(?,for_repair), for_sell=COALESCE(?,for_sell) WHERE id=?`)
+    .run(name ?? null, emoji ?? null, sort ?? null, active ?? null, norm(for_repair), norm(for_sell), req.params.id);
   res.json(db.prepare('SELECT * FROM categories WHERE id=?').get(req.params.id));
 });
 router.delete('/categories/:id', requireAdmin, (req, res) => {

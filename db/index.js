@@ -17,7 +17,8 @@ db.exec(`
 CREATE TABLE IF NOT EXISTS categories (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   slug TEXT UNIQUE NOT NULL, name TEXT NOT NULL, emoji TEXT DEFAULT '',
-  sort INTEGER DEFAULT 0, active INTEGER DEFAULT 1
+  sort INTEGER DEFAULT 0, active INTEGER DEFAULT 1,
+  for_repair INTEGER DEFAULT 1, for_sell INTEGER DEFAULT 1
 );
 CREATE TABLE IF NOT EXISTS brands (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -84,6 +85,8 @@ for (const stmt of [
   "ALTER TABLE users ADD COLUMN google_sub TEXT",
   "ALTER TABLE users ADD COLUMN username TEXT",   // staff (operator/superadmin) login id
   "ALTER TABLE users ADD COLUMN password TEXT",   // staff password (plaintext demo)
+  "ALTER TABLE categories ADD COLUMN for_repair INTEGER DEFAULT 1",  // show in Repair flow
+  "ALTER TABLE categories ADD COLUMN for_sell INTEGER DEFAULT 1",    // show in Resale flow
 ]) { try { db.exec(stmt); } catch (e) { /* column already exists — ignore */ } }
 
 db.exec(`

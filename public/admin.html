@@ -139,6 +139,11 @@ function catalogView(){
     <input value="${(c.emoji||'').startsWith('data:')?'':esc(c.emoji)}" placeholder="emoji" style="max-width:74px;text-align:center" onchange="updCategory(${c.id},'emoji',this.value)">
     <button class="btn sm ghost" onclick="pickCatIcon(${c.id})">Upload icon</button>
     <button class="del" title="Delete category" onclick="delCategory(${c.id})">×</button>
+  </div>
+  <div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px solid var(--line-2)">
+    <span style="font-size:12px;color:var(--ink-soft);font-weight:700">Available for</span>
+    <label class="appchk"><input type="checkbox" ${c.for_repair?'checked':''} onchange="updCategory(${c.id},'for_repair',this.checked?1:0)"> Repair</label>
+    <label class="appchk"><input type="checkbox" ${c.for_sell?'checked':''} onchange="updCategory(${c.id},'for_sell',this.checked?1:0)"> Resale</label>
   </div></div>`:''}
   <div class="addbar card" style="border-radius:12px">
     <input id="nc_emoji" placeholder="📦" style="max-width:60px;flex:0 0 auto">
