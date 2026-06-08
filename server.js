@@ -27,6 +27,7 @@ const accountRouter = require('./routes/account');
 const templatesRouter = require('./routes/templates');
 const accessRouter = require('./routes/access');
 const serviceRouter = require('./routes/service');
+const chatRouter = require('./routes/chat');
 
 const app = express();
 app.use(express.json({ limit: '12mb' })); // room for base64 attachments (≤7MB each)
@@ -43,6 +44,7 @@ app.use('/api/account', accountRouter);
 app.use('/api', templatesRouter);    // /order-templates
 app.use('/api/access', accessRouter);   // user/role management (superadmin)
 app.use('/api/service', serviceRouter); // statuses, operator orders, thread, comments, reviews
+app.use('/api', chatRouter);            // /chat — AI assistant
 
 app.get('/api/health', (req, res) => res.json({ ok: true, ts: Date.now() }));
 

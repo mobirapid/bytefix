@@ -615,7 +615,29 @@ async function opSetStatus(ref,status){
   }catch(e){alert(e.message);}
 }
 
-boot();
+/* ---------------- AI chat assistant ---------------- */
+let chatHist=[],chatOpen=false;
+function mountChat(){
+  if(document.getElementById('aiChat'))return;
+  const w=document.createElement('div');w.id='aiChat';w.className='aichat';
+  w.innerHTML=`<button class="aichat-bubble" onclick="toggleChat()" aria-label="Chat with us">💬</button>
+    <div class="aichat-panel">
+      <div class="aichat-head"><span><b>Assistant</b><small>Repairs · selling · orders</small></span><button onclick="toggleChat()" aria-label="Close">✕</button></div>
+      <div class="aichat-msgs" id="aiMsgs"></div>
+      <form class="aichat-in" onsubmit="sendChat(event)"><input id="aiText" placeholder="Type your question…" autocomplete="off" maxlength="1000"><button class="cta green" type="submit">Send</button></form>
+    </div>`;
+  document.body.appendChild(w);
+  pushChat('assistant',`Hi! I'm the ${esc(SET.brand_name||'ByteFix')} assistant. Ask me about repairs, selling your device, pricing, or tracking an order.`);
+}
+function toggleChat(){chatOpen=!chatOpen;document.getElementById('aiChat').classList.toggle('open',chatOpen);if(chatOpen)setTimeout(()=>document.getElementById('aiText')?.focus(),60);}
+function pushChat(role,text){chatHist.push({role,content:text});const box=document.getElementById('aiMsgs');if(!box)return;const d=document.createElement('div');d.className='aimsg '+role;d.innerHTML=esc(text).replace(/\n/g,'<br>');box.appendChild(d);box.scrollTop=box.scrollHeight;}
+async function sendChat(e){if(e)e.preventDefault();const inp=document.getElementById('aiText');const msg=(inp.value||'').trim();if(!msg)return;inp.value='';pushChat('user',msg);
+  const box=document.getElementById('aiMsgs');const t=document.createElement('div');t.className='aimsg assistant typing';t.textContent='…';box.appendChild(t);box.scrollTop=box.scrollHeight;
+  try{const r=await fetch(API+'/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msg,history:chatHist.slice(-9,-1)})});const d=await r.json();t.remove();pushChat('assistant',d.reply||d.error||'Sorry, please try again.');}
+  catch(err){t.remove();pushChat('assistant','Sorry, I could not reach the server. Please try again.');}
+}
+
+boot();mountChat();
 </script>
 </body>
 </html>

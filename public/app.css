@@ -341,3 +341,22 @@ html,body{max-width:100%;overflow-x:hidden}   /* safety net against horizontal s
   .mnav.open{position:absolute;left:0;right:0;top:100%;flex-direction:column;background:var(--card);
     border-bottom:1px solid var(--line);box-shadow:var(--shadow-lg);padding:8px 16px 18px;z-index:120}
 }
+
+/* ===== AI chat widget ===== */
+.aichat-bubble{position:fixed;right:18px;bottom:18px;width:56px;height:56px;border-radius:50%;background:var(--green);color:#fff;font-size:24px;border:none;cursor:pointer;box-shadow:var(--shadow-lg);z-index:200}
+.aichat-bubble:hover{transform:translateY(-2px)}
+.aichat-panel{position:fixed;right:18px;bottom:84px;width:360px;max-width:calc(100vw - 36px);height:520px;max-height:calc(100vh - 120px);background:var(--card);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow-lg);display:none;flex-direction:column;overflow:hidden;z-index:200}
+.aichat.open .aichat-panel{display:flex}
+.aichat.open .aichat-bubble{display:none}
+.aichat-head{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;background:var(--green);color:#fff}
+.aichat-head small{display:block;font-size:11px;opacity:.85;font-weight:500}
+.aichat-head button{background:none;border:none;color:#fff;font-size:16px;cursor:pointer;line-height:1}
+.aichat-msgs{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px;background:var(--paper)}
+.aimsg{max-width:85%;padding:9px 13px;border-radius:14px;font-size:14px;line-height:1.45;white-space:normal}
+.aimsg.user{align-self:flex-end;background:var(--green);color:#fff;border-bottom-right-radius:4px}
+.aimsg.assistant{align-self:flex-start;background:var(--card);border:1px solid var(--line);border-bottom-left-radius:4px;color:var(--ink)}
+.aimsg.typing{opacity:.55;letter-spacing:3px}
+.aichat-in{display:flex;gap:8px;padding:12px;border-top:1px solid var(--line);background:var(--card)}
+.aichat-in input{flex:1;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-family:inherit;font-size:14px}
+.aichat-in .cta{padding:10px 14px}
+@media(max-width:480px){.aichat-panel{right:10px;left:10px;width:auto;bottom:78px;height:70vh}.aichat-bubble{right:14px;bottom:14px}}
