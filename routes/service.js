@@ -50,19 +50,32 @@ router.delete('/order-statuses/:id', requireAdmin, (req, res) => {
 });
 
 /* ---------------- Operator order management ---------------- */
-// Operators (and superadmins) see and move every service request.
+// Which order flows may this user handle? repair_operator → repair, sell_operator
+// → sell, operator/superadmin → both.
+function flowsFor(uid) {
+  const p = permsOf(uid), f = [];
+  if (p.includes('service_repair') || p.includes('admin_panel')) f.push('repair');
+  if (p.includes('service_sell') || p.includes('admin_panel')) f.push('sell');
+  return f;
+}
+// Operators see and move only the service requests in their flow(s).
 router.get('/orders', requirePerm('service_requests'), (req, res) => {
-  res.json(db.prepare('SELECT * FROM orders ORDER BY id DESC LIMIT 300').all());
+  const flows = flowsFor(req.user.id);
+  if (!flows.length) return res.json([]);
+  const ph = flows.map(() => '?').join(',');
+  res.json(db.prepare(`SELECT * FROM orders WHERE type IN (${ph}) ORDER BY id DESC LIMIT 300`).all(...flows));
 });
 router.get('/orders/:ref', requirePerm('service_requests'), (req, res) => {
   const o = db.prepare('SELECT * FROM orders WHERE ref=?').get(req.params.ref);
   if (!o) return res.status(404).json({ error: 'Order not found' });
+  if (!flowsFor(req.user.id).includes(o.type)) return res.status(403).json({ error: 'Not in your queue.' });
   res.json(o);
 });
 router.put('/orders/:ref/status', requirePerm('service_requests'), (req, res) => {
   const status = String(req.body.status || '').trim();
   const o0 = db.prepare('SELECT * FROM orders WHERE ref=?').get(req.params.ref);
   if (!o0) return res.status(404).json({ error: 'Order not found' });
+  if (!flowsFor(req.user.id).includes(o0.type)) return res.status(403).json({ error: 'Not in your queue.' });
   const valid = db.prepare('SELECT 1 FROM order_statuses WHERE flow=? AND key=?').get(o0.type, status);
   if (!valid) return res.status(400).json({ error: 'Unknown status for this journey' });
   db.prepare('UPDATE orders SET status=? WHERE ref=?').run(status, req.params.ref);
@@ -104,7 +117,8 @@ router.post('/orders/:ref/comments', (req, res) => {
   if (!a) return res.status(401).json({ error: 'Please sign in to comment.' });
   const o = db.prepare('SELECT * FROM orders WHERE ref=?').get(req.params.ref);
   if (!o) return res.status(404).json({ error: 'Order not found' });
-  if (!a.isOp && !ownsOrder(a.u, o)) return res.status(403).json({ error: 'This is not your order.' });
+  if (a.isOp) { if (!flowsFor(a.u.id).includes(o.type) && !ownsOrder(a.u, o)) return res.status(403).json({ error: 'Not in your queue.' }); }
+  else if (!ownsOrder(a.u, o)) return res.status(403).json({ error: 'This is not your order.' });
 
   const body = String(req.body.body || '').trim();
   const atts = Array.isArray(req.body.attachments) ? req.body.attachments : [];
@@ -154,7 +168,8 @@ router.post('/orders/:ref/reviews', (req, res) => {
   if (!a) return res.status(401).json({ error: 'Please sign in to review.' });
   const o = db.prepare('SELECT * FROM orders WHERE ref=?').get(req.params.ref);
   if (!o) return res.status(404).json({ error: 'Order not found' });
-  if (!a.isOp && !ownsOrder(a.u, o)) return res.status(403).json({ error: 'This is not your order.' });
+  if (a.isOp) { if (!flowsFor(a.u.id).includes(o.type) && !ownsOrder(a.u, o)) return res.status(403).json({ error: 'Not in your queue.' }); }
+  else if (!ownsOrder(a.u, o)) return res.status(403).json({ error: 'This is not your order.' });
   const rating = Math.round(Number(req.body.rating));
   const review = String(req.body.review || '').trim().slice(0, 2000);
   if (!(rating >= 1 && rating <= 5)) return res.status(400).json({ error: 'Rating must be 1 to 5 stars.' });

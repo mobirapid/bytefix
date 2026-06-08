@@ -183,18 +183,23 @@ db.tx = (fn) => { db.exec('BEGIN'); try { const r = fn(); db.exec('COMMIT'); ret
   // 1) Roles
   const insRole = db.prepare('INSERT OR IGNORE INTO roles (key,name,description,sort) VALUES (?,?,?,?)');
   [
-    ['superadmin', 'Super Admin', 'Full access to the admin panel, the main app, and everything else.', 0],
-    ['operator',   'Operator',    'Handles service requests from the main app (status, discussion, reviews).', 1],
-    ['customer',   'Customer',    'A regular customer who books repairs or sells devices.', 2],
+    ['superadmin',      'Super Admin',      'Full access to the admin panel, the main app, and everything else.', 0],
+    ['operator',        'Operator (all)',   'Handles both repair and resale service requests from the main app.', 1],
+    ['repair_operator', 'Repair Operator',  'Handles only repair service requests from the main app.', 2],
+    ['sell_operator',   'Resale Operator',  'Handles only resale service requests from the main app.', 3],
+    ['customer',        'Customer',         'A regular customer who books repairs or sells devices.', 4],
   ].forEach(r => insRole.run(...r));
 
   // 2) Permissions per role (capability keys checked by the app)
+  //    service_requests = can open the console; service_repair / service_sell = which flow(s).
   const insPerm = db.prepare('INSERT OR IGNORE INTO role_permissions (role_key,perm) VALUES (?,?)');
   const PERMS = {
-    superadmin: ['admin_panel','manage_access','manage_catalog','manage_pricing','manage_orders',
-                 'manage_comms','manage_settings','service_requests','book'],
-    operator:   ['service_requests','book'],
-    customer:   ['book'],
+    superadmin:      ['admin_panel','manage_access','manage_catalog','manage_pricing','manage_orders',
+                      'manage_comms','manage_settings','service_requests','service_repair','service_sell','book'],
+    operator:        ['service_requests','service_repair','service_sell','book'],
+    repair_operator: ['service_requests','service_repair','book'],
+    sell_operator:   ['service_requests','service_sell','book'],
+    customer:        ['book'],
   };
   for (const [role, perms] of Object.entries(PERMS)) perms.forEach(p => insPerm.run(role, p));
 

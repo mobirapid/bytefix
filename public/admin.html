@@ -444,7 +444,7 @@ async function deleteStatus(id){
 }
 
 /* ---------- ACCESS (users, roles, permissions) ---------- */
-const ROLE_COLOR={superadmin:'darkgreen',operator:'orange',customer:'yellow'};
+const ROLE_COLOR={superadmin:'darkgreen',operator:'orange',repair_operator:'lightgreen',sell_operator:'yellow',customer:'yellow'};
 function roleBadge(rk){return `<span class="badge2 ${ROLE_COLOR[rk]||'yellow'}">${esc(rk)}</span>`;}
 function accessView(){
   const users=data.users||[],roles=data.roles||[];

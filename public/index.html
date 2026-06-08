@@ -589,8 +589,11 @@ function serviceList(){
     <div class="svc-foot">${badge(o.type,o.status)}<span class="svc-amt">${INR(o.amount)}</span></div>
   </div>`).join('')||`<div class="muted-card">No service requests${f!=='all'?' in this filter':''} yet.</div>`;
   const chip=(k,l)=>`<button class="filterchip ${f===k?'on':''}" onclick="S.svcFilter='${k}';renderFlow()">${l}</button>`;
-  return `<div class="step-h">Service Requests</div><p class="fsub">${all.length} request${all.length===1?'':'s'} · update status and talk to customers.</p>
-    <div class="filterbar">${chip('all','All')}${chip('repair','Repairs')}${chip('sell','Resale')}</div>
+  const canR=hasPerm('service_repair')||hasPerm('admin_panel'),canS=hasPerm('service_sell')||hasPerm('admin_panel');
+  const chips=(canR&&canS)?`${chip('all','All')}${chip('repair','Repairs')}${chip('sell','Resale')}`:'';
+  const scope=canR&&canS?'':(canR?' · repairs':' · resale');
+  return `<div class="step-h">Service Requests</div><p class="fsub">${all.length} request${all.length===1?'':'s'}${scope} · update status and talk to customers.</p>
+    ${chips?`<div class="filterbar">${chips}</div>`:''}
     <div class="svc-list">${rows}</div>`;
 }
 async function openService(ref){
