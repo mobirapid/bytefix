@@ -354,6 +354,16 @@ function settingsView(){
     <textarea class="w" rows="6" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:11px;font-family:'JetBrains Mono',monospace;font-size:12px;resize:vertical" placeholder='{ "apiKey": "...", "authDomain": "...", "projectId": "...", "appId": "..." }' onchange="saveSetting('firebase_config',this.value.trim())">${esc(s.firebase_config||'')}</textarea>
     <div style="font-size:12px;color:var(--ink-soft);margin-top:8px">Paste the <b>Firebase config object</b> from Firebase Console → Project settings → Your web app. Requires the Blaze plan for production SMS.</div>
   </div>
+  <div class="card" style="padding:14px 16px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+      <div style="font-weight:600;font-size:13.5px">Phone OTP via 2Factor.in${s.twofactor_api_key_set?' <span style="color:var(--green);font-size:11px">· key saved</span>':''}</div>
+      <label class="swt"><input type="checkbox" ${s.otp_2factor==='1'?'checked':''} onchange="data.settings.otp_2factor=this.checked?'1':'0';saveSetting('otp_2factor',data.settings.otp_2factor)"><span>${s.otp_2factor==='1'?'On':'Off'}</span></label>
+    </div>
+    <div style="font-size:12px;color:var(--ink-soft);margin:6px 0 8px">When on, OTP SMS is sent &amp; verified by 2Factor (real SMS, no DLT needed to start). Get a free API key at 2factor.in. Leave Firebase off if you use this.</div>
+    <div style="font-weight:600;font-size:12.5px;margin-bottom:5px">2Factor API key ${s.twofactor_api_key_set?'(saved — paste again to change)':'(not set)'}</div>
+    <input class="w" style="width:100%;font-family:'JetBrains Mono',monospace;font-size:13px" placeholder="paste your 2Factor API key" onchange="if(this.value.trim()){saveSetting('twofactor_api_key',this.value.trim());this.value='';flash('Key saved')}">
+    <div style="font-size:12px;color:var(--ink-soft);margin-top:8px">The key is stored securely on the server and never shown again.</div>
+  </div>
   <div class="eyebrow">SEO</div>
   <div class="card" style="padding:14px 16px">
     <div style="font-weight:600;font-size:13.5px;margin-bottom:7px">Meta description</div>

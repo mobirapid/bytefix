@@ -16,6 +16,16 @@ const gen = () => String(Math.floor(100000 + Math.random() * 900000));
 
 const MSG91 = process.env.MSG91_AUTHKEY && process.env.MSG91_TEMPLATE_ID;
 
+// 2Factor.in OTP provider (AUTOGEN: they generate + send + verify the code).
+// Admin-configurable; key kept server-side (redacted from public /settings).
+const twoFactorKey = () => {
+  try { const r = db.prepare("SELECT value FROM settings WHERE key='twofactor_api_key'").get(); if (r && r.value) return r.value; } catch (e) {}
+  return process.env.TWOFACTOR_API_KEY || '';
+};
+const twoFactorOn = () => {
+  try { const r = db.prepare("SELECT value FROM settings WHERE key='otp_2factor'").get(); return !!(r && r.value === '1') && !!twoFactorKey(); } catch (e) { return false; }
+};
+
 // Static OTP for a pre-SMS pilot: a fixed code that always verifies, for any
 // number, with no SMS sent. Explicit STATIC_OTP wins; otherwise it defaults to
 // 123456 in demo mode. It is OFF automatically once DEV_OTP=false or MSG91 is set.
@@ -59,6 +69,20 @@ router.post('/send', async (req, res) => {
   const existing = codes.get(phone);
   if (existing && Date.now() - existing.lastSent < 30000)
     return res.status(429).json({ error: 'Please wait a few seconds before requesting another code' });
+  // 2Factor AUTOGEN: provider generates + sends the code; we store the session id.
+  if (twoFactorOn()) {
+    try {
+      const cc = process.env.SMS_COUNTRY_CODE || '91';
+      const r = await fetch(`https://2factor.in/API/V1/${encodeURIComponent(twoFactorKey())}/SMS/+${cc}${phone}/AUTOGEN`);
+      const d = await r.json().catch(() => ({}));
+      if (d.Status !== 'Success') throw new Error(d.Details || ('2Factor ' + r.status));
+      codes.set(phone, { session: d.Details, twofactor: true, expires: Date.now() + 5 * 60000, attempts: 0, lastSent: Date.now() });
+      return res.json({ sent: true });
+    } catch (e) {
+      console.error('[OTP 2factor send]', e.message);
+      return res.status(502).json({ error: 'Could not send the code right now. Please try again.' });
+    }
+  }
   const code = STATIC_OTP || gen();
   if (!STATIC_OTP) {
     try {
@@ -73,24 +97,34 @@ router.post('/send', async (req, res) => {
 });
 
 // POST /api/otp/verify  { phone, code } -> { token }
-router.post('/verify', (req, res) => {
+router.post('/verify', async (req, res) => {
   const phone = norm(req.body.phone);
   const code = String(req.body.code || '').trim();
-  if (STATIC_OTP && code === STATIC_OTP) {
+  const issue = () => { const token = crypto.randomBytes(16).toString('hex'); tokens.set(token, { phone, expires: Date.now() + 15 * 60000 }); return token; };
+  if (STATIC_OTP && !twoFactorOn() && code === STATIC_OTP) {
     codes.delete(phone);
-    const token = crypto.randomBytes(16).toString('hex');
-    tokens.set(token, { phone, expires: Date.now() + 15 * 60000 });
-    return res.json({ verified: true, token });
+    return res.json({ verified: true, token: issue() });
   }
   const rec = codes.get(phone);
   if (!rec) return res.status(400).json({ error: 'Request a code first' });
   if (Date.now() > rec.expires) { codes.delete(phone); return res.status(400).json({ error: 'Code expired — request a new one' }); }
+  // 2Factor: verify the code against the provider session.
+  if (rec.twofactor) {
+    try {
+      const r = await fetch(`https://2factor.in/API/V1/${encodeURIComponent(twoFactorKey())}/SMS/VERIFY/${encodeURIComponent(rec.session)}/${encodeURIComponent(code)}`);
+      const d = await r.json().catch(() => ({}));
+      if (d.Status === 'Success') { codes.delete(phone); return res.json({ verified: true, token: issue() }); }
+      rec.attempts = (rec.attempts || 0) + 1; if (rec.attempts >= 5) codes.delete(phone);
+      return res.status(400).json({ error: 'Incorrect or expired code' });
+    } catch (e) {
+      console.error('[OTP 2factor verify]', e.message);
+      return res.status(502).json({ error: 'Could not verify the code. Please try again.' });
+    }
+  }
   if (rec.attempts >= 5) { codes.delete(phone); return res.status(429).json({ error: 'Too many attempts — request a new code' }); }
   if (rec.code !== code) { rec.attempts++; return res.status(400).json({ error: 'Incorrect code' }); }
   codes.delete(phone);
-  const token = crypto.randomBytes(16).toString('hex');
-  tokens.set(token, { phone, expires: Date.now() + 15 * 60000 });
-  res.json({ verified: true, token });
+  res.json({ verified: true, token: issue() });
 });
 
 // ---- Firebase Phone Auth: verify the client's ID token, then mint our booking token ----

@@ -108,9 +108,16 @@ router.delete('/condition-options/:id', requireAdmin, (req, res) => {
 });
 
 /* ---------------- SETTINGS ---------------- */
+// Keys that must never be exposed to the public storefront (secrets).
+const SECRET_SETTINGS = ['twofactor_api_key'];
 router.get('/settings', (req, res) => {
   const rows = db.prepare('SELECT * FROM settings').all();
-  res.json(Object.fromEntries(rows.map(r => [r.key, r.value])));
+  const out = {};
+  for (const r of rows) {
+    if (SECRET_SETTINGS.includes(r.key)) { out[r.key + '_set'] = r.value ? true : false; }
+    else out[r.key] = r.value;
+  }
+  res.json(out);
 });
 router.put('/settings', requireAdmin, (req, res) => {
   const set = db.prepare('INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)');
