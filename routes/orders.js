@@ -10,17 +10,17 @@ const ref = () => 'RG' + Math.random().toString(36).slice(2, 7).toUpperCase();
 // POST /api/orders  — create a repair or sell order (customer). Requires a verified phone.
 router.post('/', async (req, res) => {
   const { type, model_id, device_label, details, amount, service_mode,
-          customer_name, customer_phone, customer_email, address, slot, booking_token } = req.body;
+          customer_name, customer_phone, customer_email, address, slot, city, booking_token } = req.body;
   if (!['repair', 'sell'].includes(type)) return res.status(400).json({ error: 'type must be repair or sell' });
   if (!(await verifyBooking(booking_token, customer_phone)))
     return res.status(401).json({ error: 'Phone not verified. Please verify with the OTP first.' });
   const r = ref();
   const info = db.prepare(`INSERT INTO orders
-    (ref,type,model_id,device_label,details,amount,service_mode,customer_name,customer_phone,customer_email,address,slot,status)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+    (ref,type,model_id,device_label,details,amount,service_mode,customer_name,customer_phone,customer_email,address,slot,city,status)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
       r, type, model_id || null, device_label || '', JSON.stringify(details || {}),
       amount || 0, service_mode || null, customer_name || '', customer_phone || '', customer_email || '',
-      address || '', slot || '', 'placed');
+      address || '', slot || '', city || '', 'placed');
   const o = db.prepare('SELECT * FROM orders WHERE id=?').get(info.lastInsertRowid);
   notify(o, 'placed'); // booking confirmation email
   try { db.prepare('INSERT INTO consent_log (phone,email,kind,detail,ip) VALUES (?,?,?,?,?)')

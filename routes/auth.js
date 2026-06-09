@@ -17,6 +17,8 @@ const permsOf = (uid) =>
   db.prepare(`SELECT DISTINCT rp.perm FROM user_roles ur
               JOIN role_permissions rp ON rp.role_key=ur.role_key
               WHERE ur.user_id=?`).all(uid).map(r => r.perm);
+const citiesFor = (uid) =>
+  db.prepare('SELECT city FROM user_cities WHERE user_id=?').all(uid).map(r => r.city);
 const newToken = () => crypto.randomBytes(24).toString('hex');
 
 function userFromToken(req) {
@@ -107,4 +109,4 @@ function requirePerm(perm) {
   };
 }
 
-module.exports = { router, requireAdmin, requirePerm, rolesOf, permsOf, userFromToken };
+module.exports = { router, requireAdmin, requirePerm, rolesOf, permsOf, citiesFor, userFromToken };

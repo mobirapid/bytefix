@@ -1,7 +1,7 @@
 // Access management — superadmin searches users and updates their roles.
 const express = require('express');
 const db = require('../db');
-const { requireAdmin, rolesOf, permsOf } = require('./auth');
+const { requireAdmin, rolesOf, permsOf, citiesFor } = require('./auth');
 const router = express.Router();
 
 const VALID = () => db.prepare('SELECT key FROM roles').all().map(r => r.key);
@@ -13,7 +13,21 @@ router.get('/users', requireAdmin, (req, res) => {
     WHERE lower(COALESCE(name,'')) LIKE ? OR lower(COALESCE(email,'')) LIKE ?
        OR COALESCE(phone,'') LIKE ? OR lower(COALESCE(username,'')) LIKE ?
     ORDER BY id DESC LIMIT 200`).all(q, q, q, q);
-  res.json(rows.map(u => ({ ...u, roles: rolesOf(u.id), perms: permsOf(u.id) })));
+  res.json(rows.map(u => ({ ...u, roles: rolesOf(u.id), perms: permsOf(u.id), cities: citiesFor(u.id) })));
+});
+
+// Set the cities an operator covers (empty = all cities). Superadmin only.
+router.put('/users/:id/cities', requireAdmin, (req, res) => {
+  const id = Number(req.params.id);
+  const u = db.prepare('SELECT id FROM users WHERE id=?').get(id);
+  if (!u) return res.status(404).json({ error: 'User not found' });
+  const cities = Array.isArray(req.body.cities) ? [...new Set(req.body.cities.map(c => String(c).trim()).filter(Boolean))] : [];
+  db.tx(() => {
+    db.prepare('DELETE FROM user_cities WHERE user_id=?').run(id);
+    const ins = db.prepare('INSERT OR IGNORE INTO user_cities (user_id,city) VALUES (?,?)');
+    cities.forEach(c => ins.run(id, c));
+  });
+  res.json({ id, cities: citiesFor(id) });
 });
 
 // All roles (for the picker).

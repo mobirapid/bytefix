@@ -617,6 +617,12 @@ function accessView(){
         <div class="accbadges">${(u.roles||[]).map(roleBadge).join(' ')}</div></div>
       <div class="roleopts">${chips}</div>
       <div class="actions"><button class="btn ink" onclick="saveRoles(${u.id})">Save roles</button></div>
+      ${(u.perms||[]).includes('service_requests')&&!(u.perms||[]).includes('admin_panel')?`
+        <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--line-2)">
+          <div class="hint" style="margin-bottom:6px">Cities this operator covers — leave all unticked for <b>all cities</b>.</div>
+          <div class="roleopts">${cityList().map(c=>`<label class="rolechk"><input type="checkbox" data-city-uid="${u.id}" value="${esc(c)}" ${(u.cities||[]).includes(c)?'checked':''}> ${esc(c)}</label>`).join('')}</div>
+          <div class="actions"><button class="btn" onclick="saveCities(${u.id})">Save cities</button></div>
+        </div>`:''}
     </div>`;
   }).join('');
   const dr=data.delreqs||[];
@@ -635,6 +641,7 @@ function accessView(){
     ${users.length?rows:`<div class="card sec"><div class="empty"><b>No users found</b><span>Try a different search term.</span></div></div>`}`;
 }
 function accessSearch(q){accessQ=q;clearTimeout(accessTimer);accessTimer=setTimeout(async()=>{data.users=await api('/access/users?q='+encodeURIComponent(q));render(accessView());const el=document.getElementById('userq');if(el){el.focus();const v=el.value;el.value='';el.value=v;}},250);}
+async function saveCities(uid){const cities=[...document.querySelectorAll('input[data-city-uid="'+uid+'"]:checked')].map(x=>x.value);try{await api('/access/users/'+uid+'/cities',{method:'PUT',body:JSON.stringify({cities})});data.users=await api('/access/users?q='+encodeURIComponent(accessQ));flash('Cities updated');render(accessView());}catch(e){flash(e.message);}}
 async function markDelReq(id){try{await api('/access/deletion-requests/'+id,{method:'PUT',body:JSON.stringify({status:'done'})});data.delreqs=await api('/access/deletion-requests');flash('Marked done');render(accessView());}catch(e){flash(e.message);}}
 async function saveRoles(uid){
   const checked=[...document.querySelectorAll('input[data-uid="'+uid+'"]:checked')].map(x=>x.value);

@@ -89,6 +89,7 @@ for (const stmt of [
   "ALTER TABLE users ADD COLUMN password TEXT",   // staff password (plaintext demo)
   "ALTER TABLE categories ADD COLUMN for_repair INTEGER DEFAULT 1",  // show in Repair flow
   "ALTER TABLE categories ADD COLUMN for_sell INTEGER DEFAULT 1",    // show in Resale flow
+  "ALTER TABLE orders ADD COLUMN city TEXT",                          // city for operator routing
   "ALTER TABLE brands ADD COLUMN for_repair INTEGER DEFAULT 1",
   "ALTER TABLE brands ADD COLUMN for_sell INTEGER DEFAULT 1",
   "ALTER TABLE models ADD COLUMN for_repair INTEGER DEFAULT 1",
@@ -118,6 +119,12 @@ CREATE TABLE IF NOT EXISTS user_roles (
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   role_key TEXT NOT NULL REFERENCES roles(key) ON DELETE CASCADE,
   UNIQUE(user_id, role_key)
+);
+-- Cities an operator covers. No rows = all cities (unrestricted).
+CREATE TABLE IF NOT EXISTS user_cities (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  city TEXT NOT NULL,
+  UNIQUE(user_id, city)
 );
 
 -- ===== Configurable order statuses (per flow) with colour =====
