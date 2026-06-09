@@ -62,7 +62,14 @@ app.use('/api', auditRouter);           // /audit, /audit.csv (superadmin)
 app.get('/api/health', (req, res) => res.json({ ok: true, ts: Date.now() }));
 
 // Frontend
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'public'), {
+  etag: true, lastModified: true,
+  setHeaders: (res, p) => {
+    // Always revalidate HTML/CSS/JS so browsers pick up new builds immediately
+    // (returns 304 when unchanged — cheap — and fresh content after a deploy).
+    if (/\.(html|css|js)$/i.test(p)) res.setHeader('Cache-Control', 'no-cache');
+  },
+}));
 app.get('/admin', (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
 
 const PORT = process.env.PORT || 3000;
