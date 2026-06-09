@@ -522,6 +522,7 @@ function schedule(){const fix=S.mode==='fix';return `<div class="step-h">${fix?'
   <div class="field"><label>Full name</label><input id="f_name" placeholder="e.g. Aarav Sharma" value="${esc(S.name||'')}"></div>
   <div class="field"><label>Mobile number</label><div class="ccrow"><select id="f_cc" class="cc">${ccOptions(S.dial)}</select><input id="f_phone" placeholder="10-digit mobile" inputmode="tel" value="${esc(S.phone||'')}"></div></div>
   <div class="field"><label>Email (for order updates)</label><input id="f_email" type="email" placeholder="you@email.com" value="${esc(S.email||'')}"></div>
+  <div class="field"><label>City</label><select id="f_city">${CITIES.map(c=>`<option ${c===(S.city||curCity())?'selected':''}>${esc(c)}</option>`).join('')}</select></div>
   <div class="field"><label>Address</label><button type="button" class="locbtn" id="locBtn" onclick="useLocation('locBtn','f_addr')"><span>📍</span> Use my current location</button><textarea id="f_addr" rows="2" placeholder="Flat, street, area, city, pincode">${esc(S.address||'')}</textarea></div>
   <div class="field" id="slotField"><label>Pick a slot</label><div class="slots">${SLOTS.map((s,i)=>`<div class="slot ${S.slot===s?'sel':''}" id="sl${i}" onclick="selSlot(${i})">${s}</div>`).join('')}</div></div>
   <label class="prefrow" id="consentRow" style="margin-top:6px"><input type="checkbox" id="f_consent" ${S.consent?'checked':''}> I agree to the <a onclick="showPolicy('terms');return false" href="#">Terms</a> &amp; <a onclick="showPolicy('privacy');return false" href="#">Privacy Policy</a></label>
@@ -529,7 +530,7 @@ function schedule(){const fix=S.mode==='fix';return `<div class="step-h">${fix?'
 function selSlot(i){S.slot=SLOTS[i];document.querySelectorAll('.slot').forEach(s=>s.classList.remove('sel'));document.getElementById('sl'+i).classList.add('sel');fieldErr(document.getElementById('slotField'),'');}
 function startOtp(){
   clearErrs();
-  S.name=val('f_name');S.dial=val('f_cc')||'+91';S.phone=val('f_phone');S.email=val('f_email');S.address=val('f_addr');
+  S.name=val('f_name');S.dial=val('f_cc')||'+91';S.phone=val('f_phone');S.email=val('f_email');S.address=val('f_addr');S.city=val('f_city')||curCity();
   let ok=true;
   if(S.name.length<2){setErr('f_name','Please enter your name');ok=false;}
   const digits=S.phone.replace(/\D/g,'');const minLen=S.dial==='+91'?10:7;
@@ -567,7 +568,7 @@ function otpScreen(){const fix=S.mode==='fix';return `<div class="step-h">Verify
   <button class="btn btn-ghost" onclick="sendOtp(false)">Resend code</button>${S.otpMsg?`<p class="note">${S.otpMsg}</p>`:''}</div>`;}
 async function placeOrder(){
   const c=cat(S.cat);const b=c.brands.find(x=>x.id===S.brand);
-  try{const o=await api('/orders',{method:'POST',body:JSON.stringify({type:(S.mode==='fix'?'repair':'sell'),model_id:S.model,device_label:`${b.name} ${S.modelName}`,details:S.mode==='fix'?{issues:S.issues,service_mode:S.svc,items:(S.quote&&S.quote.items)||[],gst_percent:S.quote&&S.quote.gst_percent,gst:S.quote&&S.quote.gst,total:S.quote&&S.quote.total}:{answers:S.answers,base_value:S.quote&&S.quote.base_value,payout:S.quote&&S.quote.payout,summary:condSummary()},amount:S.amount,service_mode:S.svc,customer_name:S.name,customer_phone:S.phone,customer_email:S.email,address:S.address,slot:S.slot,city:curCity(),booking_token:S.booking_token})});S.order=o.ref;nav(done);}
+  try{const o=await api('/orders',{method:'POST',body:JSON.stringify({type:(S.mode==='fix'?'repair':'sell'),model_id:S.model,device_label:`${b.name} ${S.modelName}`,details:S.mode==='fix'?{issues:S.issues,service_mode:S.svc,items:(S.quote&&S.quote.items)||[],gst_percent:S.quote&&S.quote.gst_percent,gst:S.quote&&S.quote.gst,total:S.quote&&S.quote.total}:{answers:S.answers,base_value:S.quote&&S.quote.base_value,payout:S.quote&&S.quote.payout,summary:condSummary()},amount:S.amount,service_mode:S.svc,customer_name:S.name,customer_phone:S.phone,customer_email:S.email,address:S.address,slot:S.slot,city:S.city||curCity(),booking_token:S.booking_token})});S.order=o.ref;nav(done);}
   catch(e){alert('Could not place order: '+e.message);const vb=document.getElementById('vbtn');if(vb){vb.disabled=false;vb.textContent='Verify';}}
 }
 function done(){const fix=S.mode==='fix';return `<div class="center"><div class="tick ${fix?'':'amber'}">✓</div><h1 style="font-size:30px">${fix?'Repair booked!':'Pickup scheduled!'}</h1><p class="fsub">${fix?'A technician is assigned for':'Our agent will collect your device'} <b style="color:var(--ink)">${S.slot}</b>.</p><div class="oid">Order ${S.order}</div>
