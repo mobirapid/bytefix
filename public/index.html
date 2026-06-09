@@ -380,9 +380,16 @@ function showPolicy(key){mode='page';stack=[];syncHeader();
   </div></section>`+footerHTML();window.scrollTo({top:0});}
 
 /* ---------------- CORPORATE (B2B) ---------------- */
-function corpBandHTML(){return `<section class="block" style="padding-top:0"><div class="container"><div class="corp-band">
-  <div><div class="kicker" style="text-align:left;color:var(--green-bright);margin-bottom:8px">For business</div><h3>Got a fleet to sell — or to buy?</h3><p>Bulk asset recovery and refurbished procurement for companies, with certified data wiping and GST invoicing.</p></div>
-  <button class="cta" onclick="showCorporate()">Talk to our team →</button></div></div></section>`;}
+function corpBandHTML(){return `<section class="block" id="business"><div class="container"><div class="bizband">
+  <div class="bizband-in">
+    <div class="biz-eyebrow">◆ For business · Bulk buy &amp; sell</div>
+    <h2 class="biz-h">Your retired fleet is <span class="biz-hl">untapped cash.</span></h2>
+    <p class="biz-sub">Bulk device buy-back and quality-graded refurbished procurement for companies — with certified data wiping, GST invoices and a dedicated account manager.</p>
+    <div class="biz-chips"><span>♻ Asset recovery</span><span>🔒 Certified data wipe</span><span>🧾 GST invoicing</span><span>🤝 Dedicated manager</span></div>
+    <div class="biz-cta"><button class="cta light" onclick="setCorpIntent('sell')">Sell in bulk →</button><button class="cta ghostlight" onclick="setCorpIntent('buy')">Buy refurbished →</button></div>
+  </div>
+  <div class="biz-stats"><div><b>500+</b><span>devices per order</span></div><div><b>&lt;24h</b><span>team responds</span></div><div><b>100%</b><span>data wiped &amp; certified</span></div></div>
+</div></div></section>`;}
 
 function showCorporate(){mode='page';stack=[];syncHeader();const v=document.getElementById('view');v.innerHTML=corporateHTML()+footerHTML();window.scrollTo({top:0});}
 function setCorpIntent(i){corpIntent=i;const keep={};['c_company','c_name','c_email','c_phone','c_qty','c_types','c_msg'].forEach(id=>{const el=document.getElementById(id);if(el)keep[id]=el.value;});showCorporate();Object.entries(keep).forEach(([id,v])=>{const el=document.getElementById(id);if(el)el.value=v;});}
