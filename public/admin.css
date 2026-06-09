@@ -213,3 +213,11 @@ textarea.fw{font-family:inherit;resize:vertical}
 .citychip{font-size:12px;border:1px solid var(--line);background:var(--card);color:var(--ink-soft);border-radius:999px;padding:3px 10px;cursor:pointer;transition:.12s}
 .citychip:hover{border-color:var(--green-bright)}
 .citychip.on{background:var(--green);color:#fff;border-color:var(--green)}
+
+/* Audit log table */
+.audit-tbl{width:100%;border-collapse:collapse;font-size:13px}
+.audit-tbl th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-soft);padding:10px 12px;border-bottom:1px solid var(--line);background:rgba(14,23,38,.03);position:sticky;top:0}
+.audit-tbl td{padding:9px 12px;border-bottom:1px solid var(--line-2);vertical-align:top}
+.audit-tbl .mono{font-family:'JetBrains Mono';font-size:11.5px;color:var(--ink-soft);white-space:nowrap}
+.audit-tbl .adet{color:var(--ink-soft);max-width:380px;word-break:break-word}
+.audit-tbl tr:hover td{background:rgba(14,23,38,.02)}

@@ -3,6 +3,8 @@ const crypto = require('crypto');
 const db = require('../db');
 const { phoneForToken } = require('./otp');
 const { rolesOf, permsOf } = require('./auth');
+const pw = require('./pw');
+const { record } = require('./auditlog');
 const router = express.Router();
 
 const pub = (u) => u && {
@@ -19,9 +21,11 @@ router.post('/staff-login', (req, res) => {
   const password = String(req.body.password || '');
   if (!username || !password) return res.status(400).json({ error: 'Username and password are required.' });
   const u = db.prepare('SELECT * FROM users WHERE username=? AND password IS NOT NULL').get(username);
-  if (!u || u.password !== password) return res.status(401).json({ error: 'Invalid username or password.' });
+  if (!u || !pw.verify(password, u.password)) { record({ action: 'STAFF_LOGIN_FAILED', detail: 'user=' + username, ip: req.ip || '' }); return res.status(401).json({ error: 'Invalid username or password.' }); }
+  if (!pw.isHashed(u.password)) db.prepare('UPDATE users SET password=? WHERE id=?').run(pw.hash(password), u.id); // upgrade legacy
   const token = crypto.randomBytes(16).toString('hex');
   db.prepare('UPDATE users SET token=? WHERE id=?').run(token, u.id);
+  record({ actor_id: u.id, actor_name: u.name || u.username, actor_role: rolesOf(u.id).join(','), action: 'STAFF_LOGIN', ip: req.ip || '' });
   res.json({ user: pub(db.prepare('SELECT * FROM users WHERE id=?').get(u.id)), session: token });
 });
 

@@ -2,7 +2,13 @@ const express = require('express');
 const crypto = require('crypto');
 const db = require('../db');
 const { sendEmail } = require('./mailer');
+const pw = require('./pw');
+const { record } = require('./auditlog');
 const router = express.Router();
+
+// basic login rate limit per ip+id
+const loginHits = new Map();
+function loginLimited(k) { const now = Date.now(); const a = (loginHits.get(k) || []).filter(t => now - t < 600000); a.push(now); loginHits.set(k, a); return a.length > 8; }
 
 // ----- role / permission helpers (DB-driven) -----
 const rolesOf = (uid) =>
@@ -25,12 +31,18 @@ router.post('/login', (req, res) => {
   const { email, password } = req.body || {};
   const id = String(email || '').trim();
   if (!id || !password) return res.status(400).json({ error: 'Email and password are required' });
+  const ip = req.ip || req.socket.remoteAddress || '';
+  if (loginLimited(ip + '|' + id.toLowerCase())) return res.status(429).json({ error: 'Too many attempts. Please try again later.' });
   const u = db.prepare('SELECT * FROM users WHERE (username=? OR lower(email)=lower(?)) AND password IS NOT NULL').get(id, id);
-  if (!u || u.password !== password) return res.status(401).json({ error: 'Invalid email or password' });
-  if (!permsOf(u.id).includes('admin_panel'))
+  if (!u || !pw.verify(password, u.password)) { record({ action: 'LOGIN_FAILED', detail: 'id=' + id, ip }); return res.status(401).json({ error: 'Invalid email or password' }); }
+  if (!permsOf(u.id).includes('admin_panel')) {
+    record({ actor_id: u.id, actor_name: u.name || u.username, actor_role: rolesOf(u.id).join(','), action: 'LOGIN_DENIED (no admin access)', ip });
     return res.status(403).json({ error: 'This account does not have admin access.' });
+  }
+  if (!pw.isHashed(u.password)) db.prepare('UPDATE users SET password=? WHERE id=?').run(pw.hash(password), u.id); // upgrade legacy plaintext
   const token = newToken();
   db.prepare('UPDATE users SET token=? WHERE id=?').run(token, u.id);
+  record({ actor_id: u.id, actor_name: u.name || u.username, actor_role: rolesOf(u.id).join(','), action: 'LOGIN', ip });
   res.json({ token, email: u.email || u.username, name: u.name, roles: rolesOf(u.id) });
 });
 
@@ -71,8 +83,9 @@ router.post('/reset', (req, res) => {
   if (rec.code !== code) { rec.attempts++; return res.status(400).json({ error: 'Incorrect code.' }); }
   const u = adminByEmail(email);
   if (!u || !permsOf(u.id).includes('admin_panel')) { resetCodes.delete(email.toLowerCase()); return res.status(400).json({ error: 'Account not found.' }); }
-  db.prepare('UPDATE users SET password=?, token=NULL WHERE id=?').run(password, u.id);
+  db.prepare('UPDATE users SET password=?, token=NULL WHERE id=?').run(pw.hash(password), u.id);
   resetCodes.delete(email.toLowerCase());
+  record({ actor_id: u.id, actor_name: u.name || u.username, actor_role: permsOf(u.id).join(','), action: 'PASSWORD_RESET', ip: req.ip || '' });
   res.json({ ok: true });
 });
 

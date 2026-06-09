@@ -171,6 +171,15 @@ db.exec(`CREATE TABLE IF NOT EXISTS item_cities (
 );
 CREATE INDEX IF NOT EXISTS idx_item_cities ON item_cities(level, flow, city);`);
 
+// Audit log — tamper-evident record of admin/operator actions ("authorities log").
+db.exec(`CREATE TABLE IF NOT EXISTS audit_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts TEXT DEFAULT (datetime('now')),
+  actor_id INTEGER, actor_name TEXT, actor_role TEXT,
+  action TEXT, detail TEXT, ip TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(id DESC);`);
+
 const _tpl = db.prepare('INSERT OR IGNORE INTO order_templates (key,type,status,label,subject,body) VALUES (?,?,?,?,?,?)');
 for (const [ty, st, lb, su, bo] of [
   ['repair','placed','Booking confirmed','Your repair is booked · {ref}','Hi {name}, your {device} repair is booked. We will keep you posted at every step. Reference: {ref}.'],

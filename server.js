@@ -28,9 +28,21 @@ const templatesRouter = require('./routes/templates');
 const accessRouter = require('./routes/access');
 const serviceRouter = require('./routes/service');
 const chatRouter = require('./routes/chat');
+const { router: auditRouter, auditMiddleware } = require('./routes/audit');
 
 const app = express();
+
+// Security headers (basic hardening for compliance/audit posture).
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'geolocation=(self), microphone=(), camera=()');
+  next();
+});
+
 app.use(express.json({ limit: '12mb' })); // room for base64 attachments (≤7MB each)
+app.use('/api', auditMiddleware);          // record authenticated admin/operator writes
 
 // API
 app.use('/api/auth', authRouter);
@@ -45,6 +57,7 @@ app.use('/api', templatesRouter);    // /order-templates
 app.use('/api/access', accessRouter);   // user/role management (superadmin)
 app.use('/api/service', serviceRouter); // statuses, operator orders, thread, comments, reviews
 app.use('/api', chatRouter);            // /chat — AI assistant
+app.use('/api', auditRouter);           // /audit, /audit.csv (superadmin)
 
 app.get('/api/health', (req, res) => res.json({ ok: true, ts: Date.now() }));
 

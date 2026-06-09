@@ -12,7 +12,7 @@
 <script>
 const API='/api';
 let TOKEN=localStorage.getItem('regear_token')||'';
-let tab='overview', adminCat=null, adminModel=null, data={}, commsTab='repair', commsStatus=null, accessQ='', accessTimer=null, showCities=false;
+let tab='overview', adminCat=null, adminModel=null, data={}, commsTab='repair', commsStatus=null, accessQ='', accessTimer=null, showCities=false, auditQ='', auditTimer=null;
 const INR=n=>'₹'+Number(Math.round(n||0)).toLocaleString('en-IN');
 const esc=s=>String(s==null?'':s).replace(/"/g,'&quot;').replace(/</g,'&lt;');
 const catIco=x=>(x&&(x.emoji||'').startsWith('data:'))?'<img src="'+x.emoji+'" alt="" style="height:16px;width:auto;vertical-align:-3px;border-radius:3px">':((x&&x.emoji)||'');
@@ -34,6 +34,7 @@ const PAGES={
   corporate:['Corporate','B2B bulk sell & buy enquiries','◍'],
   comms:['Communications','Emails & messages sent for every order','✉'],
   access:['Access','Users, roles & permissions','◐'],
+  audit:['Audit log','Record of admin & operator actions','▣'],
   settings:['Settings','Store configuration','⚙'],
 };
 
@@ -96,7 +97,7 @@ function logout(){TOKEN='';localStorage.removeItem('regear_token');renderLogin()
 
 /* ---------- SHELL ---------- */
 function shell(body){
-  const order=['overview','catalog','repair','resale','orders','corporate','comms','access','settings'];
+  const order=['overview','catalog','repair','resale','orders','corporate','comms','access','audit','settings'];
   const city=(data.settings&&data.settings.city)||'Bengaluru';
   return `<div class="layout">
     <aside class="sidebar">
@@ -132,6 +133,7 @@ async function boot(){
     else if(tab==='corporate'){data.leads=await api('/corporate');render(corporateView());}
     else if(tab==='comms'){data.templates=await api('/order-templates');data.settings=await api('/settings');data.statuses=await api('/service/order-statuses');render(commsView());}
     else if(tab==='access'){data.users=await api('/access/users?q=');data.roles=await api('/access/roles');render(accessView());}
+    else if(tab==='audit'){data.audit=await api('/audit?q='+encodeURIComponent(auditQ));render(auditView());}
     else if(tab==='settings'){data.settings=await api('/settings');render(settingsView());}
   }catch(e){flash(e.message);}
 }
@@ -551,6 +553,26 @@ async function saveRoles(uid){
   const checked=[...document.querySelectorAll('input[data-uid="'+uid+'"]:checked')].map(x=>x.value);
   try{await api('/access/users/'+uid+'/roles',{method:'PUT',body:JSON.stringify({roles:checked})});data.users=await api('/access/users?q='+encodeURIComponent(accessQ));flash('Roles updated');render(accessView());}
   catch(e){flash(e.message);}
+}
+
+/* ---------- AUDIT LOG ---------- */
+function auditView(){
+  const rows=data.audit||[];
+  return `<div class="card sec">
+      <div class="switchrow"><div><b>Audit log</b><p class="hint">Every admin/operator change is recorded automatically — logins, status changes, catalog/pricing edits, role &amp; settings changes. ${rows.length} most recent shown.</p></div>
+        <button class="btn" onclick="downloadAudit()">Export CSV</button></div>
+      <div class="searchbar"><input id="auditq" placeholder="Search actor, action or detail…" value="${esc(auditQ)}" oninput="auditSearch(this.value)"></div>
+    </div>
+    <div class="card sec" style="overflow-x:auto;padding:0">
+      <table class="audit-tbl"><thead><tr><th>Time (UTC)</th><th>Actor</th><th>Role</th><th>Action</th><th>Detail</th><th>IP</th></tr></thead>
+      <tbody>${rows.length?rows.map(r=>`<tr><td class="mono">${esc(r.ts)}</td><td>${esc(r.actor_name||'—')}</td><td>${esc(r.actor_role||'')}</td><td><b>${esc(r.action||'')}</b></td><td class="adet">${esc(r.detail||'')}</td><td class="mono">${esc(r.ip||'')}</td></tr>`).join(''):`<tr><td colspan="6" style="padding:18px;color:var(--ink-soft)">No entries yet.</td></tr>`}</tbody></table>
+    </div>`;
+}
+function auditSearch(q){auditQ=q;clearTimeout(auditTimer);auditTimer=setTimeout(async()=>{data.audit=await api('/audit?q='+encodeURIComponent(q));render(auditView());const el=document.getElementById('auditq');if(el){el.focus();const v=el.value;el.value='';el.value=v;}},250);}
+async function downloadAudit(){
+  try{const r=await fetch(API+'/audit.csv?q='+encodeURIComponent(auditQ),{headers:{'Authorization':'Bearer '+TOKEN}});const blob=await r.blob();
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='audit-log.csv';a.click();URL.revokeObjectURL(a.href);}
+  catch(e){flash('Could not export');}
 }
 
 boot();
