@@ -206,6 +206,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS order_kyc (
   by_user INTEGER, ip TEXT,
   doc_name TEXT, doc_mime TEXT, doc_size INTEGER, doc_data BLOB,
   consent_method TEXT, sign_ref TEXT, signed_phone TEXT,
+  verified INTEGER DEFAULT 0, verified_by INTEGER, verified_at TEXT,
   updated_at TEXT DEFAULT (datetime('now'))
 );`);
 for (const stmt of [
@@ -213,6 +214,9 @@ for (const stmt of [
   "ALTER TABLE order_kyc ADD COLUMN sign_ref TEXT",
   "ALTER TABLE order_kyc ADD COLUMN signed_phone TEXT",
   "ALTER TABLE order_kyc ADD COLUMN id_number TEXT",
+  "ALTER TABLE order_kyc ADD COLUMN verified INTEGER DEFAULT 0",
+  "ALTER TABLE order_kyc ADD COLUMN verified_by INTEGER",
+  "ALTER TABLE order_kyc ADD COLUMN verified_at TEXT",
 ]) { try { db.exec(stmt); } catch (e) {} }
 
 const _tpl = db.prepare('INSERT OR IGNORE INTO order_templates (key,type,status,label,subject,body) VALUES (?,?,?,?,?,?)');

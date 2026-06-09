@@ -35,9 +35,12 @@ router.get('/:ref', (req, res) => {
   res.json(o);
 });
 
-// GET /api/orders — admin list
+// GET /api/orders — admin list (with KYC presence + verification status)
 router.get('/', requireAdmin, (req, res) => {
-  res.json(db.prepare('SELECT * FROM orders ORDER BY id DESC LIMIT 200').all());
+  res.json(db.prepare(`SELECT o.*,
+      (k.order_ref IS NOT NULL) AS has_kyc, COALESCE(k.verified,0) AS kyc_verified
+    FROM orders o LEFT JOIN order_kyc k ON k.order_ref=o.ref
+    ORDER BY o.id DESC LIMIT 200`).all());
 });
 
 // PUT /api/orders/:ref/status — admin update (emails the customer using the step template)

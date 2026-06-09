@@ -771,6 +771,7 @@ async function genKycDoc(ref){try{await persistKyc(ref);}catch(e){}const o=S.tra
    <body>
    <h1>${esc(bn)} — Device Sale &amp; Ownership Declaration</h1>
    <p class="muted">Reference: ${esc(o.ref)} &nbsp;·&nbsp; Generated: ${new Date().toLocaleString('en-IN')}</p>
+   ${k.verified?`<div style="border:2px solid #2E7D32;background:#E7F4EA;color:#1b5e20;padding:10px 14px;border-radius:8px;font-weight:bold;margin:14px 0">✓ VERIFIED by ${esc(bn)}${(k.verified_name||k.verified_username)?(' · '+esc(k.verified_name||k.verified_username)):''}${k.verified_at?(' · '+new Date(k.verified_at).toLocaleString('en-IN')):''}</div>`:`<div style="border:2px solid #C0392B;background:#FCEBE9;color:#922;padding:10px 14px;border-radius:8px;font-weight:bold;margin:14px 0">NOT VERIFIED — this document is NOT valid until verified by ${esc(bn)}.</div>`}
    <table>
      ${row('Seller name',k.consent_name||o.customer_name)}
      ${row('Contact',(o.customer_phone||'')+'  '+(o.customer_email||''))}

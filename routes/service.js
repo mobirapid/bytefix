@@ -206,8 +206,10 @@ function kycMeta(ref) {
   // Includes id_number — only ever returned to operators on flow-gated endpoints.
   const r = db.prepare(`SELECT k.order_ref,k.id_type,k.id_last4,k.id_number,k.serial,k.consent,k.consent_name,k.consent_at,
       k.consent_method,k.sign_ref,k.signed_phone,k.doc_name,k.doc_mime,k.doc_size,k.updated_at,
-      u.name AS operator_name, u.username AS operator_username
-    FROM order_kyc k LEFT JOIN users u ON u.id=k.by_user WHERE k.order_ref=?`).get(ref);
+      k.verified,k.verified_at,
+      u.name AS operator_name, u.username AS operator_username,
+      v.name AS verified_name, v.username AS verified_username
+    FROM order_kyc k LEFT JOIN users u ON u.id=k.by_user LEFT JOIN users v ON v.id=k.verified_by WHERE k.order_ref=?`).get(ref);
   return r ? { ...r, has_doc: !!r.doc_name } : null;
 }
 function kycGuard(req, res) {
@@ -281,6 +283,18 @@ router.post('/orders/:ref/kyc/sign', requirePerm('service_requests'), (req, res)
     db.prepare("INSERT INTO order_kyc (order_ref,consent,consent_method,consent_at,sign_ref,signed_phone,by_user,ip) VALUES (?,1,'otp',?,?,?,?,?)")
       .run(o.ref, at, signRef, phone, req.user.id, req.ip || '');
   }
+  res.json(kycMeta(o.ref));
+});
+
+// Superadmin verifies (approves) the KYC — the document is only valid once verified.
+router.post('/orders/:ref/kyc/verify', requireAdmin, (req, res) => {
+  const o = db.prepare('SELECT ref FROM orders WHERE ref=?').get(req.params.ref);
+  if (!o) return res.status(404).json({ error: 'Order not found' });
+  const k = db.prepare('SELECT order_ref FROM order_kyc WHERE order_ref=?').get(o.ref);
+  if (!k) return res.status(400).json({ error: 'No KYC to verify on this order.' });
+  const verified = req.body.verified === false ? 0 : 1;
+  db.prepare('UPDATE order_kyc SET verified=?, verified_by=?, verified_at=? WHERE order_ref=?')
+    .run(verified, verified ? req.admin.id : null, verified ? new Date().toISOString() : null, o.ref);
   res.json(kycMeta(o.ref));
 });
 

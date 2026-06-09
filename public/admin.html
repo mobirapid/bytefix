@@ -326,7 +326,7 @@ function ordersView(){
     ${orderDetails(o)}
     <div class="rowline"><span class="lbl-mini">Status</span>
       <select onchange="setStatus('${o.ref}',this.value)">${flowStatuses(o.type).map(s=>`<option value="${s.key}" ${o.status===s.key?'selected':''}>${esc(s.label)}</option>`).join('')||`<option>${esc(o.status)}</option>`}</select>
-      <button class="btn ghost" style="padding:7px 12px;font-size:13px;margin-left:auto" onclick="genInvoice('${o.ref}')">${o.type==='repair'?'Tax invoice':'Purchase voucher'}</button>${o.type==='sell'?`<button class="btn ghost" style="padding:7px 12px;font-size:13px" onclick="ownershipDoc('${o.ref}')">Purchase document</button>`:''}</div>
+      <button class="btn ghost" style="padding:7px 12px;font-size:13px;margin-left:auto" onclick="genInvoice('${o.ref}')">${o.type==='repair'?'Tax invoice':'Purchase voucher'}</button>${o.type==='sell'?`<button class="btn ghost" style="padding:7px 12px;font-size:13px" onclick="ownershipDoc('${o.ref}')">Purchase document</button>${o.has_kyc?(o.kyc_verified?`<span class="badge2 darkgreen">KYC verified</span><button class="del-btn" onclick="verifyKyc('${o.ref}',0)">Revoke</button>`:`<span class="badge2 orange">KYC pending</span><button class="btn ink" style="padding:7px 12px;font-size:13px" onclick="verifyKyc('${o.ref}',1)">Verify KYC</button>`):''}`:''}</div>
   </div>`).join('')}</div>`;
 }
 function orderDetails(o){
@@ -391,6 +391,7 @@ function genInvoice(ref){
    </body></html>`;
   const w=window.open('','_blank');if(!w){flash('Allow pop-ups to print');return;}w.document.write(html);w.document.close();
 }
+async function verifyKyc(ref,on){if(!on&&!confirm('Revoke verification for '+ref+'?'))return;try{await api('/service/orders/'+ref+'/kyc/verify',{method:'POST',body:JSON.stringify({verified:!!on})});data.orders=await api('/orders');flash(on?'KYC verified':'Verification revoked');render(ordersView());}catch(e){flash(e.message);}}
 function maskId(type,num){num=String(num||'').trim();if(!num)return '—';if(/aadh/i.test(type||'')){const d=num.replace(/\D/g,'');return d.length>4?('XXXX XXXX '+d.slice(-4)):num;}return num;}
 async function ownershipDoc(ref){
   const o=(data.orders||[]).find(x=>x.ref===ref);if(!o)return;
@@ -408,6 +409,7 @@ async function ownershipDoc(ref){
    <body>
    <h1>${e(bn)} &mdash; Device Sale &amp; Ownership Declaration</h1>
    <p class="muted">Reference: ${e(o.ref)} &nbsp;&middot;&nbsp; Generated: ${new Date().toLocaleString('en-IN')}</p>
+   ${k.verified?`<div style="border:2px solid #2E7D32;background:#E7F4EA;color:#1b5e20;padding:10px 14px;border-radius:8px;font-weight:bold;margin:14px 0">&#10003; VERIFIED by ${e(bn)}${(k.verified_name||k.verified_username)?(' &middot; '+e(k.verified_name||k.verified_username)):''}${k.verified_at?(' &middot; '+new Date(k.verified_at).toLocaleString('en-IN')):''}</div>`:`<div style="border:2px solid #C0392B;background:#FCEBE9;color:#922;padding:10px 14px;border-radius:8px;font-weight:bold;margin:14px 0">NOT VERIFIED &mdash; this document is NOT valid until verified by ${e(bn)}.</div>`}
    <table>
      ${row('Seller name',k.consent_name||o.customer_name)}
      ${row('Contact',(o.customer_phone||'')+'  '+(o.customer_email||''))}
