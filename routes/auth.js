@@ -1,6 +1,7 @@
 const express = require('express');
 const crypto = require('crypto');
 const db = require('../db');
+const { sendEmail } = require('./mailer');
 const router = express.Router();
 
 // ----- role / permission helpers (DB-driven) -----
@@ -31,6 +32,48 @@ router.post('/login', (req, res) => {
   const token = newToken();
   db.prepare('UPDATE users SET token=? WHERE id=?').run(token, u.id);
   res.json({ token, email: u.email || u.username, name: u.name, roles: rolesOf(u.id) });
+});
+
+// ---- Forgot password (admin): email an OTP, then reset ----
+const resetCodes = new Map(); // email -> { code, expires, attempts, lastSent }
+const genCode = () => String(Math.floor(100000 + Math.random() * 900000));
+const adminByEmail = (id) =>
+  db.prepare('SELECT * FROM users WHERE (lower(email)=lower(?) OR username=?) AND password IS NOT NULL').get(id, id);
+const brandName = () => { try { const r = db.prepare("SELECT value FROM settings WHERE key='brand_name'").get(); return (r && r.value) || 'ByteFix'; } catch (e) { return 'ByteFix'; } };
+
+// POST /api/auth/forgot { email } — always returns ok (doesn't reveal if the account exists)
+router.post('/forgot', (req, res) => {
+  const email = String(req.body.email || '').trim();
+  const prev = resetCodes.get(email.toLowerCase());
+  if (prev && Date.now() - prev.lastSent < 30000)
+    return res.status(429).json({ error: 'Please wait a few seconds before requesting another code.' });
+  const u = email && adminByEmail(email);
+  if (u && permsOf(u.id).includes('admin_panel') && u.email) {
+    const code = genCode();
+    resetCodes.set(email.toLowerCase(), { code, expires: Date.now() + 10 * 60000, attempts: 0, lastSent: Date.now() });
+    const bn = brandName();
+    sendEmail(u.email, `${bn} admin password reset code`,
+      `Your ${bn} admin password reset code is ${code}. It is valid for 10 minutes. If you did not request this, please ignore this email.`);
+  }
+  res.json({ ok: true });
+});
+
+// POST /api/auth/reset { email, code, password }
+router.post('/reset', (req, res) => {
+  const email = String(req.body.email || '').trim();
+  const code = String(req.body.code || '').trim();
+  const password = String(req.body.password || '');
+  if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters.' });
+  const rec = resetCodes.get(email.toLowerCase());
+  if (!rec) return res.status(400).json({ error: 'Request a reset code first.' });
+  if (Date.now() > rec.expires) { resetCodes.delete(email.toLowerCase()); return res.status(400).json({ error: 'Code expired — request a new one.' }); }
+  if (rec.attempts >= 5) { resetCodes.delete(email.toLowerCase()); return res.status(429).json({ error: 'Too many attempts — request a new code.' }); }
+  if (rec.code !== code) { rec.attempts++; return res.status(400).json({ error: 'Incorrect code.' }); }
+  const u = adminByEmail(email);
+  if (!u || !permsOf(u.id).includes('admin_panel')) { resetCodes.delete(email.toLowerCase()); return res.status(400).json({ error: 'Account not found.' }); }
+  db.prepare('UPDATE users SET password=?, token=NULL WHERE id=?').run(password, u.id);
+  resetCodes.delete(email.toLowerCase());
+  res.json({ ok: true });
 });
 
 // Protects admin-panel write routes — requires the admin_panel permission.
