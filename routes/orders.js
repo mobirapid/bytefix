@@ -23,6 +23,8 @@ router.post('/', async (req, res) => {
       address || '', slot || '', 'placed');
   const o = db.prepare('SELECT * FROM orders WHERE id=?').get(info.lastInsertRowid);
   notify(o, 'placed'); // booking confirmation email
+  try { db.prepare('INSERT INTO consent_log (phone,email,kind,detail,ip) VALUES (?,?,?,?,?)')
+    .run(o.customer_phone || '', o.customer_email || '', 'booking', 'Agreed to Terms & Privacy at booking ' + o.ref, req.ip || ''); } catch (e) {}
   res.json(o);
 });
 

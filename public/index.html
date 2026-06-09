@@ -172,7 +172,7 @@ function loginSignup(){return `<div class="step-h">Create your account</div><p c
 async function finishSignup(){clearErrs();const name=val('su_name'),email=val('su_email');let ok=true;if(name.length<2){setErr('su_name','Please enter your name');ok=false;}if(!EMAIL_RE.test(email)){setErr('su_email','Enter a valid email address');ok=false;}if(!ok)return;
   if(!document.getElementById('su_consent').checked){alert('Please accept the Terms & Privacy Policy to continue.');return;}
   const eu=document.getElementById('su_eu').checked;const btn=document.getElementById('subtn');btn.disabled=true;btn.textContent='Creating…';
-  try{const s=await api('/account/save',{method:'POST',body:JSON.stringify({booking_token:S.booking_token,name,email,city:CITY,email_updates:eu?1:0})});setSession(s.session,s.user);S.name=name;S.email=email;
+  try{const s=await api('/account/save',{method:'POST',body:JSON.stringify({booking_token:S.booking_token,name,email,city:CITY,email_updates:eu?1:0,consent:1})});setSession(s.session,s.user);S.name=name;S.email=email;
     if(S.fromBooking){await placeOrder();}else{showProfile();}
   }catch(e){btn.disabled=false;btn.textContent='Create account →';alert(e.message);}}
 async function showProfile(){if(!SESSION){enterFlow(loginPhone);return;}mode='page';stack=[];syncHeader();
@@ -193,12 +193,26 @@ async function showProfile(){if(!SESSION){enterFlow(loginPhone);return;}mode='pa
       <div class="dock" style="margin-top:14px"><button class="btn green" onclick="saveProfile()">Save changes</button></div>
     </div>
     <div class="form-card" style="margin-top:18px"><h3 class="pc-h">Your orders</h3>${oh}</div>
+    <div class="form-card" style="margin-top:18px"><h3 class="pc-h">Data &amp; privacy</h3>
+      <p style="color:var(--ink-soft);font-size:13.5px;margin-bottom:12px">Download a copy of your data, or request deletion of your account. See our <a style="color:var(--green-bright)" onclick="showPolicy('privacy');return false" href="#">Privacy Policy</a>.</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn btn-ghost" onclick="downloadMyData()">Download my data</button><button class="btn btn-ghost" style="color:#C0392B;border-color:#E7B9B2" onclick="requestDelete()">Delete my account</button></div>
+    </div>
     <div style="margin-top:18px"><button class="btn btn-ghost" onclick="logout()">Log out</button></div>
   </div></section>`+footerHTML();window.scrollTo({top:0});}
 async function saveProfile(){clearErrs();const name=val('p_name'),email=val('p_email'),city=val('p_city');let ok=true;if(name.length<2){setErr('p_name','Please enter your name');ok=false;}if(!EMAIL_RE.test(email)){setErr('p_email','Enter a valid email');ok=false;}if(!ok)return;
   const eu=document.getElementById('p_eu').checked;
   try{const m=await aapi('/account/me',{method:'PUT',body:JSON.stringify({name,email,city,email_updates:eu?1:0})});setSession(SESSION,m.user);toast('Saved');}catch(e){alert(e.message);}}
 async function logout(){try{await aapi('/account/logout',{method:'POST'});}catch(e){}clearSession();showHome();}
+async function downloadMyData(){try{const r=await fetch(API+'/account/export',{headers:{'Authorization':'Bearer '+SESSION}});const blob=await r.blob();const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='my-data.json';a.click();URL.revokeObjectURL(a.href);}catch(e){alert('Could not export your data.');}}
+async function requestDelete(){if(!confirm('Request deletion of your account and personal data? Our team will process this. You will be signed out.'))return;try{await aapi('/account/delete',{method:'POST',body:JSON.stringify({})});clearSession();alert('Your deletion request has been submitted. We will process it shortly.');showHome();}catch(e){alert(e.message||'Could not submit request.');}}
+/* Cookie consent banner */
+function mountCookie(){try{if(localStorage.getItem('cookie_ok'))return;}catch(e){}
+  if(document.getElementById('cookieBar'))return;
+  const d=document.createElement('div');d.id='cookieBar';d.className='cookiebar';
+  d.innerHTML=`<span>We use essential cookies to run this site and improve your experience. See our <a onclick="showPolicy('privacy');return false" href="#">Privacy Policy</a>.</span><button class="cta green" onclick="acceptCookies()">Got it</button>`;
+  document.body.appendChild(d);
+}
+function acceptCookies(){try{localStorage.setItem('cookie_ok','1');}catch(e){}const b=document.getElementById('cookieBar');if(b)b.remove();}
 function toast(msg){const t=document.createElement('div');t.className='toast';t.textContent=msg;document.body.appendChild(t);setTimeout(()=>{t.style.opacity='0';setTimeout(()=>t.remove(),300);},1600);}
 function loadGsi(){return new Promise(res=>{const ok=()=>window.google&&google.accounts&&google.accounts.id;if(ok())return res();let s=document.getElementById('gsi');if(!s){s=document.createElement('script');s.id='gsi';s.src='https://accounts.google.com/gsi/client';s.async=true;document.head.appendChild(s);}const iv=setInterval(()=>{if(ok()){clearInterval(iv);res();}},80);setTimeout(()=>{clearInterval(iv);res();},5000);});}
 function mountGoogleIfPresent(){const el=document.getElementById('gbtn');if(!el||el.dataset.done)return;const sec=document.getElementById('gsection');const cid=(SET.google_client_id||'').trim();
@@ -687,7 +701,7 @@ async function sendChat(e){if(e)e.preventDefault();const inp=document.getElement
   catch(err){t.remove();pushChat('assistant','Sorry, I could not reach the server. Please try again.');}
 }
 
-boot();mountChat();
+boot();mountChat();mountCookie();
 </script>
 </body>
 </html>

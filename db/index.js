@@ -180,6 +180,16 @@ db.exec(`CREATE TABLE IF NOT EXISTS audit_log (
 );
 CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(id DESC);`);
 
+// DPDP: consent records + data-erasure requests.
+db.exec(`CREATE TABLE IF NOT EXISTS consent_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, phone TEXT, email TEXT,
+  kind TEXT, detail TEXT, ip TEXT, ts TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS deletion_requests (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, name TEXT, phone TEXT, email TEXT,
+  reason TEXT, status TEXT DEFAULT 'open', ts TEXT DEFAULT (datetime('now'))
+);`);
+
 const _tpl = db.prepare('INSERT OR IGNORE INTO order_templates (key,type,status,label,subject,body) VALUES (?,?,?,?,?,?)');
 for (const [ty, st, lb, su, bo] of [
   ['repair','placed','Booking confirmed','Your repair is booked · {ref}','Hi {name}, your {device} repair is booked. We will keep you posted at every step. Reference: {ref}.'],

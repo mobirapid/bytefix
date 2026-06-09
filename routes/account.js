@@ -5,6 +5,7 @@ const { phoneForToken } = require('./otp');
 const { rolesOf, permsOf } = require('./auth');
 const pw = require('./pw');
 const { record } = require('./auditlog');
+const { sendEmail } = require('./mailer');
 const router = express.Router();
 
 const pub = (u) => u && {
@@ -70,6 +71,10 @@ router.post('/save', (req, res) => {
     db.prepare('INSERT INTO users (phone,name,email,city,email_updates,token) VALUES (?,?,?,?,?,?)')
       .run(phone, name || '', email || '', city || '', eu == null ? 1 : eu, token);
   }
+  if (req.body.consent) {
+    try { db.prepare('INSERT INTO consent_log (phone,email,kind,detail,ip) VALUES (?,?,?,?,?)')
+      .run(phone, email || '', 'signup', 'Agreed to Terms & Privacy at signup', req.ip || ''); } catch (e) {}
+  }
   res.json({ user: pub(byPhone(phone)), session: token });
 });
 
@@ -91,6 +96,37 @@ router.get('/orders', requireUser, (req, res) => {
 
 router.post('/logout', requireUser, (req, res) => {
   db.prepare('UPDATE users SET token=NULL WHERE id=?').run(req.user.id);
+  res.json({ ok: true });
+});
+
+// DPDP: export all of my data (account + orders + my comments/reviews + consent).
+router.get('/export', requireUser, (req, res) => {
+  const u = req.user;
+  const last10 = String(u.phone || '').replace(/\D/g, '').slice(-10);
+  const orders = last10 ? db.prepare('SELECT * FROM orders WHERE customer_phone LIKE ?').all('%' + last10) : [];
+  const comments = db.prepare('SELECT order_ref,body,created_at FROM order_comments WHERE author_user_id=?').all(u.id);
+  const reviews = db.prepare('SELECT order_ref,role,rating,review,created_at FROM order_reviews WHERE author_user_id=?').all(u.id);
+  const consent = db.prepare('SELECT kind,detail,ts FROM consent_log WHERE user_id=? OR phone=? OR lower(email)=lower(?)').all(u.id, u.phone || '', u.email || '');
+  const data = {
+    exported_at: new Date().toISOString(),
+    account: { id: u.id, name: u.name, phone: u.phone, email: u.email, city: u.city, email_updates: !!u.email_updates, created_at: u.created_at, roles: rolesOf(u.id) },
+    orders, comments, reviews, consent,
+  };
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Content-Disposition', 'attachment; filename="my-data.json"');
+  res.send(JSON.stringify(data, null, 2));
+});
+
+// DPDP: request account deletion (erasure). Logged + emailed to admin; you're signed out.
+router.post('/delete', requireUser, (req, res) => {
+  const u = req.user;
+  const reason = String(req.body.reason || '').slice(0, 500);
+  db.prepare('INSERT INTO deletion_requests (user_id,name,phone,email,reason) VALUES (?,?,?,?,?)')
+    .run(u.id, u.name || '', u.phone || '', u.email || '', reason);
+  record({ actor_id: u.id, actor_name: u.name || u.phone || ('#' + u.id), actor_role: 'customer', action: 'DATA_DELETION_REQUEST', detail: reason, ip: req.ip || '' });
+  const adminEmail = (db.prepare("SELECT value FROM settings WHERE key='email'").get() || {}).value;
+  if (adminEmail) sendEmail(adminEmail, 'Account deletion request', `User ${u.name || ''} (${u.phone || ''} ${u.email || ''}) requested account deletion.${reason ? ' Reason: ' + reason : ''}`);
+  db.prepare('UPDATE users SET token=NULL WHERE id=?').run(u.id); // sign out
   res.json({ ok: true });
 });
 
