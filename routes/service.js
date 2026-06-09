@@ -182,4 +182,61 @@ router.post('/orders/:ref/reviews', (req, res) => {
   res.json(db.prepare('SELECT role,rating,review,created_at,updated_at FROM order_reviews WHERE order_ref=? AND role=?').get(o.ref, a.role));
 });
 
+/* ---------------- Resale KYC / ownership document ---------------- */
+function kycMeta(ref) {
+  const r = db.prepare('SELECT order_ref,id_type,id_last4,serial,consent,consent_name,consent_at,doc_name,doc_mime,doc_size,updated_at FROM order_kyc WHERE order_ref=?').get(ref);
+  return r ? { ...r, has_doc: !!r.doc_name } : null;
+}
+function kycGuard(req, res) {
+  const o = db.prepare('SELECT * FROM orders WHERE ref=?').get(req.params.ref);
+  if (!o) { res.status(404).json({ error: 'Order not found' }); return null; }
+  if (!flowsFor(req.user.id).includes(o.type)) { res.status(403).json({ error: 'Not in your queue.' }); return null; }
+  return o;
+}
+router.get('/orders/:ref/kyc', requirePerm('service_requests'), (req, res) => {
+  if (!kycGuard(req, res)) return;
+  res.json(kycMeta(req.params.ref) || {});
+});
+router.put('/orders/:ref/kyc', requirePerm('service_requests'), (req, res) => {
+  const o = kycGuard(req, res); if (!o) return;
+  const b = req.body || {};
+  const id_type = String(b.id_type || '').slice(0, 24);
+  const id_last4 = String(b.id_last4 || '').replace(/\D/g, '').slice(-4);
+  const serial = String(b.serial || '').slice(0, 80).trim();
+  const consent = b.consent ? 1 : 0;
+  const consent_name = String(b.consent_name || '').slice(0, 120);
+  let doc = null;
+  if (b.doc && b.doc.data) {
+    const mime = String(b.doc.mime || '');
+    if (!OK_MIME(mime)) return res.status(400).json({ error: 'ID must be an image or PDF.' });
+    let buf; try { buf = Buffer.from(String(b.doc.data).split(',').pop(), 'base64'); } catch (e) { return res.status(400).json({ error: 'Bad file.' }); }
+    if (!buf.length) return res.status(400).json({ error: 'Empty file.' });
+    if (buf.length > MAX_BYTES) return res.status(400).json({ error: 'ID file must be 7MB or smaller.' });
+    doc = { name: String(b.doc.name || 'id').slice(0, 120), mime, size: buf.length, data: buf };
+  }
+  const existing = db.prepare('SELECT * FROM order_kyc WHERE order_ref=?').get(o.ref);
+  const consent_at = consent ? new Date().toISOString() : (existing ? existing.consent_at : null);
+  if (existing) {
+    db.prepare(`UPDATE order_kyc SET id_type=?,id_last4=?,serial=?,consent=?,consent_name=?,consent_at=?,by_user=?,ip=?,updated_at=datetime('now')
+      ${doc ? ',doc_name=?,doc_mime=?,doc_size=?,doc_data=?' : ''} WHERE order_ref=?`)
+      .run(id_type, id_last4, serial, consent, consent_name, consent_at, req.user.id, req.ip || '',
+        ...(doc ? [doc.name, doc.mime, doc.size, doc.data] : []), o.ref);
+  } else {
+    db.prepare(`INSERT INTO order_kyc (order_ref,id_type,id_last4,serial,consent,consent_name,consent_at,by_user,ip,doc_name,doc_mime,doc_size,doc_data)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(o.ref, id_type, id_last4, serial, consent, consent_name, consent_at, req.user.id, req.ip || '',
+        doc ? doc.name : null, doc ? doc.mime : null, doc ? doc.size : null, doc ? doc.data : null);
+  }
+  res.json(kycMeta(o.ref));
+});
+// Stream the stored ID document — operators only (NOT public).
+router.get('/orders/:ref/kyc/doc', requirePerm('service_requests'), (req, res) => {
+  if (!kycGuard(req, res)) return;
+  const r = db.prepare('SELECT doc_name,doc_mime,doc_data FROM order_kyc WHERE order_ref=?').get(req.params.ref);
+  if (!r || !r.doc_data) return res.status(404).json({ error: 'No document on file' });
+  res.setHeader('Content-Type', r.doc_mime || 'application/octet-stream');
+  res.setHeader('Content-Disposition', 'inline; filename="' + (r.doc_name || 'id').replace(/"/g, '') + '"');
+  res.send(Buffer.from(r.doc_data));
+});
+
 module.exports = router;

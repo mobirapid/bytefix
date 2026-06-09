@@ -190,6 +190,17 @@ CREATE TABLE IF NOT EXISTS deletion_requests (
   reason TEXT, status TEXT DEFAULT 'open', ts TEXT DEFAULT (datetime('now'))
 );`);
 
+// Resale KYC / ownership record per order. ID number is NOT stored in full —
+// only the last 4 digits + the document image (BLOB, operator-access only).
+db.exec(`CREATE TABLE IF NOT EXISTS order_kyc (
+  order_ref TEXT PRIMARY KEY,
+  id_type TEXT, id_last4 TEXT, serial TEXT,
+  consent INTEGER DEFAULT 0, consent_name TEXT, consent_at TEXT,
+  by_user INTEGER, ip TEXT,
+  doc_name TEXT, doc_mime TEXT, doc_size INTEGER, doc_data BLOB,
+  updated_at TEXT DEFAULT (datetime('now'))
+);`);
+
 const _tpl = db.prepare('INSERT OR IGNORE INTO order_templates (key,type,status,label,subject,body) VALUES (?,?,?,?,?,?)');
 for (const [ty, st, lb, su, bo] of [
   ['repair','placed','Booking confirmed','Your repair is booked · {ref}','Hi {name}, your {device} repair is booked. We will keep you posted at every step. Reference: {ref}.'],

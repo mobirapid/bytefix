@@ -372,3 +372,8 @@ html,body{max-width:100%;overflow-x:hidden}   /* safety net against horizontal s
 .cookiebar a{color:#fff;text-decoration:underline;cursor:pointer}
 .cookiebar .cta{padding:8px 16px}
 @media(max-width:560px){.cookiebar{flex-direction:column;text-align:center}}
+
+/* Operator KYC card */
+.kyc-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:8px}
+.kyc-grid label{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:600;color:var(--ink-soft)}
+.kyc-grid input,.kyc-grid select{border:1px solid var(--line);border-radius:10px;padding:9px 11px;font-family:inherit;font-size:14px;color:var(--ink)}

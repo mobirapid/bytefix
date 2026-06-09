@@ -662,7 +662,8 @@ async function openService(ref){
   try{S.templates=await api('/order-templates');}catch(e){S.templates=[];}
   try{S.thread=await api('/service/orders/'+ref+'/thread');}catch(e){S.thread=[];}
   try{S.reviews=await api('/service/orders/'+ref+'/reviews');}catch(e){S.reviews=[];}
-  S.files=[];S.revDraft=null;nav(serviceDetail);
+  try{S.kyc=await aapi('/service/orders/'+ref+'/kyc');}catch(e){S.kyc={};}
+  S.files=[];S.revDraft=null;S.kycFile=null;nav(serviceDetail);
 }
 function serviceDetail(){
   const o=S.tracked;const steps=flowSteps(o.type);
@@ -670,8 +671,66 @@ function serviceDetail(){
     <p class="fsub">${esc(o.device_label||'')} · ${esc(o.customer_name||'—')} · ${esc(o.customer_phone||'')}</p>
     <div class="field"><label>Update status</label>
       <select id="svc_status" onchange="opSetStatus('${o.ref}',this.value)">${steps.map(s=>`<option value="${s.key}" ${o.status===s.key?'selected':''}>${esc(s.label)}</option>`).join('')}</select></div>
+    ${kycCard(o)}
     ${threadHTML(o.ref)}
     ${reviewHTML(o.ref,'operator')}`;
+}
+function kycCard(o){const k=S.kyc||{};const types=['Aadhaar','PAN','Driving Licence','Passport','Voter ID'];
+  return `<div class="thread"><div class="thread-h">Seller KYC &amp; ownership ${k.consent?'<span class="badge2 darkgreen">consent recorded</span>':''}</div>
+    <div class="kyc-grid">
+      <label>ID type<select id="k_type">${types.map(t=>`<option ${k.id_type===t?'selected':''}>${t}</option>`).join('')}</select></label>
+      <label>ID last 4 digits<input id="k_last4" maxlength="4" inputmode="numeric" value="${esc(k.id_last4||'')}" placeholder="1234"></label>
+      <label>Device serial / IMEI<input id="k_serial" value="${esc(k.serial||'')}" placeholder="IMEI or serial no."></label>
+    </div>
+    <div class="composer-row" style="margin-top:8px">
+      <label class="filebtn">📎 ${k.has_doc?'Replace ID document':'Upload ID document'}<input type="file" accept="image/*,application/pdf" onchange="pickKyc(this)"></label>
+      <span class="filehint" id="kychint">${k.has_doc?'Document on file':''}</span>
+      ${k.has_doc?`<a class="att" href="#" onclick="viewKyc('${o.ref}');return false">View ID on file</a>`:''}
+    </div>
+    <label class="prefrow" style="margin-top:10px"><input type="checkbox" id="k_consent" ${k.consent?'checked':''}> Seller is present and consents to KYC, and confirms rightful ownership of the device</label>
+    <label class="fl" style="display:block;margin-top:6px;font-size:12px;color:var(--ink-soft)">Seller name (as declared)</label>
+    <input id="k_name" value="${esc(k.consent_name||'')}" placeholder="Full name" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:9px 11px">
+    <div class="err" id="kyc_err"></div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px"><button class="btn green" onclick="saveKyc('${o.ref}')">Save KYC</button>
+      <button class="btn btn-ghost" onclick="genKycDoc('${o.ref}')">Generate document</button></div>
+    <p class="filehint" style="margin-top:6px">Only the last 4 ID digits are stored. The ID file is kept securely and visible to operators only.</p>
+  </div>`;
+}
+function pickKyc(input){const f=input.files[0];const h=document.getElementById('kychint');if(!f)return;
+  if(!(/^image\//.test(f.type)||f.type==='application/pdf')){h.textContent='Only image or PDF allowed';S.kycFile=null;return;}
+  if(f.size>7*1024*1024){h.textContent='File must be 7MB or smaller';S.kycFile=null;return;}
+  const r=new FileReader();r.onload=()=>{S.kycFile={name:f.name,mime:f.type,data:r.result};h.textContent=f.name+' ready';};r.readAsDataURL(f);}
+async function saveKyc(ref){const err=document.getElementById('kyc_err');err.textContent='';
+  const body={id_type:val('k_type'),id_last4:val('k_last4'),serial:val('k_serial'),consent:document.getElementById('k_consent').checked?1:0,consent_name:val('k_name')};
+  if(S.kycFile)body.doc=S.kycFile;
+  try{S.kyc=await aapi('/service/orders/'+ref+'/kyc',{method:'PUT',body:JSON.stringify(body)});S.kycFile=null;toast('KYC saved');renderFlow();}
+  catch(e){err.textContent=e.message;}}
+async function viewKyc(ref){try{const r=await fetch(API+'/service/orders/'+ref+'/kyc/doc',{headers:{Authorization:'Bearer '+SESSION}});if(!r.ok)throw 0;const blob=await r.blob();window.open(URL.createObjectURL(blob),'_blank');}catch(e){alert('Could not load the document.');}}
+async function genKycDoc(ref){const o=S.tracked,k=S.kyc||{};const bn=SET.brand_name||'ByteFix';
+  let docHtml='';
+  if(k.has_doc){try{const r=await fetch(API+'/service/orders/'+ref+'/kyc/doc',{headers:{Authorization:'Bearer '+SESSION}});const blob=await r.blob();const url=URL.createObjectURL(blob);docHtml=blob.type.indexOf('pdf')>=0?`<p><a href="${url}" target="_blank">Attached ID document (PDF)</a></p>`:`<img src="${url}" style="max-width:340px;border:1px solid #ccc;border-radius:8px;margin-top:6px">`;}catch(e){}}
+  const row=(l,v)=>`<tr><td class="lbl">${l}</td><td>${esc(v||'—')}</td></tr>`;
+  const html=`<!doctype html><html><head><meta charset="utf-8"><title>Ownership Declaration ${esc(o.ref)}</title>
+   <style>body{font-family:Arial,Helvetica,sans-serif;color:#111;max-width:720px;margin:24px auto;padding:0 22px;line-height:1.55}h1{font-size:20px;margin:0}table{width:100%;border-collapse:collapse;margin:16px 0}td{padding:8px 10px;border:1px solid #ccd;font-size:14px}.lbl{background:#f3f5f8;font-weight:bold;width:38%}.muted{color:#666;font-size:12px}.sig{margin-top:54px;display:flex;justify-content:space-between;gap:30px}.sig div{flex:1;border-top:1px solid #333;padding-top:6px;font-size:13px}</style></head>
+   <body>
+   <h1>${esc(bn)} — Device Sale &amp; Ownership Declaration</h1>
+   <p class="muted">Reference: ${esc(o.ref)} &nbsp;·&nbsp; Generated: ${new Date().toLocaleString('en-IN')}</p>
+   <table>
+     ${row('Seller name',k.consent_name||o.customer_name)}
+     ${row('Contact',(o.customer_phone||'')+'  '+(o.customer_email||''))}
+     ${row('ID type',(k.id_type||'')+(k.id_last4?(' (ending '+k.id_last4+')'):''))}
+     ${row('Device',o.device_label)}
+     ${row('Serial / IMEI',k.serial)}
+     ${row('Agreed amount',INR(o.amount))}
+   </table>
+   <p><b>Declaration:</b> I, the seller named above, confirm that I am the rightful owner of the device described, that it is not lost, stolen, or under any legal encumbrance, and that I voluntarily sell it to ${esc(bn)}. I consent to the collection of my identity document for KYC and record-keeping as required by applicable law.</p>
+   <p class="muted">Digital consent captured: ${k.consent?'YES':'NO'}${k.consent_at?(' · '+new Date(k.consent_at).toLocaleString('en-IN')):''}</p>
+   ${docHtml?('<p><b>ID document on file:</b></p>'+docHtml):''}
+   <div class="sig"><div>Seller signature</div><div>For ${esc(bn)} (operator)</div></div>
+   <scr`+`ipt>window.onload=function(){setTimeout(function(){window.print();},400);}</scr`+`ipt>
+   </body></html>`;
+  const w=window.open('','_blank');if(!w){alert('Please allow pop-ups to generate the document.');return;}
+  w.document.write(html);w.document.close();
 }
 async function opSetStatus(ref,status){
   try{const o=await aapi('/service/orders/'+ref+'/status',{method:'PUT',body:JSON.stringify({status})});S.tracked=o;
