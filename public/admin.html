@@ -397,7 +397,7 @@ async function ownershipDoc(ref){
   let k={};try{k=await api('/service/orders/'+ref+'/kyc');}catch(e){k={};}
   const s=data.settings||{};const bn=s.brand_name||'ByteFix';
   let docHtml='';
-  if(k.has_doc){try{const r=await fetch(API+'/service/orders/'+ref+'/kyc/doc',{headers:{Authorization:'Bearer '+TOKEN}});const blob=await r.blob();const url=URL.createObjectURL(blob);const wm='<span>'+e(bn)+' • VERIFICATION ONLY</span>';docHtml=blob.type.indexOf('pdf')>=0?`<p><a href="${url}" target="_blank">Attached ID document (PDF)</a></p>`:`<div class="idwrap"><img class="idimg" src="${url}"><div class="idwm">${wm}${wm}${wm}${wm}</div></div>`;}catch(e){}}
+  if(k.has_doc){try{const r=await fetch(API+'/service/orders/'+ref+'/kyc/doc',{headers:{Authorization:'Bearer '+TOKEN}});const blob=await r.blob();const data=await new Promise(rs=>{const fr=new FileReader();fr.onload=()=>rs(fr.result);fr.readAsDataURL(blob);});const wm='<span>'+e(bn)+' • VERIFICATION ONLY</span>';docHtml=blob.type.indexOf('pdf')>=0?`<embed src="${data}" type="application/pdf" style="width:100%;height:560px;border:1px solid #ccc">`:`<div class="idwrap"><img class="idimg" src="${data}"><div class="idwm">${wm}${wm}${wm}${wm}</div></div>`;}catch(e){}}
   const e=x=>String(x==null?'':x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
   const row=(l,v)=>`<tr><td class="lbl">${l}</td><td>${e(v||'—')}</td></tr>`;
   const signLine=k.consent_method==='otp'
