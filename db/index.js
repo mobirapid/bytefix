@@ -194,7 +194,7 @@ CREATE TABLE IF NOT EXISTS deletion_requests (
 // only the last 4 digits + the document image (BLOB, operator-access only).
 db.exec(`CREATE TABLE IF NOT EXISTS order_kyc (
   order_ref TEXT PRIMARY KEY,
-  id_type TEXT, id_last4 TEXT, serial TEXT,
+  id_type TEXT, id_last4 TEXT, id_number TEXT, serial TEXT,
   consent INTEGER DEFAULT 0, consent_name TEXT, consent_at TEXT,
   by_user INTEGER, ip TEXT,
   doc_name TEXT, doc_mime TEXT, doc_size INTEGER, doc_data BLOB,
@@ -205,6 +205,7 @@ for (const stmt of [
   "ALTER TABLE order_kyc ADD COLUMN consent_method TEXT",
   "ALTER TABLE order_kyc ADD COLUMN sign_ref TEXT",
   "ALTER TABLE order_kyc ADD COLUMN signed_phone TEXT",
+  "ALTER TABLE order_kyc ADD COLUMN id_number TEXT",
 ]) { try { db.exec(stmt); } catch (e) {} }
 
 const _tpl = db.prepare('INSERT OR IGNORE INTO order_templates (key,type,status,label,subject,body) VALUES (?,?,?,?,?,?)');

@@ -186,7 +186,8 @@ router.post('/orders/:ref/reviews', (req, res) => {
 
 /* ---------------- Resale KYC / ownership document ---------------- */
 function kycMeta(ref) {
-  const r = db.prepare('SELECT order_ref,id_type,id_last4,serial,consent,consent_name,consent_at,consent_method,sign_ref,signed_phone,doc_name,doc_mime,doc_size,updated_at FROM order_kyc WHERE order_ref=?').get(ref);
+  // Includes id_number — only ever returned to operators on flow-gated endpoints.
+  const r = db.prepare('SELECT order_ref,id_type,id_last4,id_number,serial,consent,consent_name,consent_at,consent_method,sign_ref,signed_phone,doc_name,doc_mime,doc_size,updated_at FROM order_kyc WHERE order_ref=?').get(ref);
   return r ? { ...r, has_doc: !!r.doc_name } : null;
 }
 function kycGuard(req, res) {
@@ -203,7 +204,8 @@ router.put('/orders/:ref/kyc', requirePerm('service_requests'), (req, res) => {
   const o = kycGuard(req, res); if (!o) return;
   const b = req.body || {};
   const id_type = String(b.id_type || '').slice(0, 24);
-  const id_last4 = String(b.id_last4 || '').replace(/\D/g, '').slice(-4);
+  const id_number = String(b.id_number || '').trim().slice(0, 40);
+  const id_last4 = id_number.replace(/\D/g, '').slice(-4);
   const serial = String(b.serial || '').slice(0, 80).trim();
   const consent = b.consent ? 1 : 0;
   const consent_name = String(b.consent_name || '').slice(0, 120);
@@ -219,14 +221,14 @@ router.put('/orders/:ref/kyc', requirePerm('service_requests'), (req, res) => {
   const existing = db.prepare('SELECT * FROM order_kyc WHERE order_ref=?').get(o.ref);
   const consent_at = consent ? new Date().toISOString() : (existing ? existing.consent_at : null);
   if (existing) {
-    db.prepare(`UPDATE order_kyc SET id_type=?,id_last4=?,serial=?,consent=?,consent_name=?,consent_at=?,by_user=?,ip=?,updated_at=datetime('now')
+    db.prepare(`UPDATE order_kyc SET id_type=?,id_last4=?,id_number=?,serial=?,consent=?,consent_name=?,consent_at=?,by_user=?,ip=?,updated_at=datetime('now')
       ${doc ? ',doc_name=?,doc_mime=?,doc_size=?,doc_data=?' : ''} WHERE order_ref=?`)
-      .run(id_type, id_last4, serial, consent, consent_name, consent_at, req.user.id, req.ip || '',
+      .run(id_type, id_last4, id_number, serial, consent, consent_name, consent_at, req.user.id, req.ip || '',
         ...(doc ? [doc.name, doc.mime, doc.size, doc.data] : []), o.ref);
   } else {
-    db.prepare(`INSERT INTO order_kyc (order_ref,id_type,id_last4,serial,consent,consent_name,consent_at,by_user,ip,doc_name,doc_mime,doc_size,doc_data)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-      .run(o.ref, id_type, id_last4, serial, consent, consent_name, consent_at, req.user.id, req.ip || '',
+    db.prepare(`INSERT INTO order_kyc (order_ref,id_type,id_last4,id_number,serial,consent,consent_name,consent_at,by_user,ip,doc_name,doc_mime,doc_size,doc_data)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(o.ref, id_type, id_last4, id_number, serial, consent, consent_name, consent_at, req.user.id, req.ip || '',
         doc ? doc.name : null, doc ? doc.mime : null, doc ? doc.size : null, doc ? doc.data : null);
   }
   res.json(kycMeta(o.ref));

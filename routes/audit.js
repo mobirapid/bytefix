@@ -5,7 +5,7 @@ const { requireAdmin, userFromToken, rolesOf } = require('./auth');
 const { record, list } = require('./auditlog');
 const router = express.Router();
 
-const SECRET_FIELDS = ['password', 'twofactor_api_key', 'idToken', 'credential', 'booking_token', 'token', 'attachments', 'data'];
+const SECRET_FIELDS = ['password', 'twofactor_api_key', 'idToken', 'credential', 'booking_token', 'token', 'attachments', 'data', 'id_number'];
 function summarize(body) {
   if (!body || typeof body !== 'object') return '';
   const o = {};

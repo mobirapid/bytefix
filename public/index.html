@@ -710,7 +710,7 @@ function kycCard(o){const k=S.kyc||{};const types=['Aadhaar','PAN','Driving Lice
   return `<div class="thread"><div class="thread-h">Seller KYC &amp; ownership ${k.consent?'<span class="badge2 darkgreen">consent recorded</span>':''}</div>
     <div class="kyc-grid">
       <label>ID type<select id="k_type">${types.map(t=>`<option ${k.id_type===t?'selected':''}>${t}</option>`).join('')}</select></label>
-      <label>ID last 4 digits<input id="k_last4" maxlength="4" inputmode="numeric" value="${esc(k.id_last4||'')}" placeholder="1234"></label>
+      <label>ID number<input id="k_idnum" value="${esc(k.id_number||'')}" placeholder="Aadhaar / PAN / DL number"></label>
       <label>Device serial / IMEI<input id="k_serial" value="${esc(k.serial||'')}" placeholder="IMEI or serial no."></label>
     </div>
     <div class="composer-row" style="margin-top:8px">
@@ -734,7 +734,7 @@ function kycCard(o){const k=S.kyc||{};const types=['Aadhaar','PAN','Driving Lice
     <div class="err" id="kyc_err"></div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px"><button class="btn green" onclick="saveKyc('${o.ref}')">Save KYC</button>
       <button class="btn btn-ghost" onclick="genKycDoc('${o.ref}')">Generate document</button></div>
-    <p class="filehint" style="margin-top:6px">Only the last 4 ID digits are stored. The ID file is kept securely and visible to operators only.</p>
+    <p class="filehint" style="margin-top:6px">The ID number &amp; document are stored securely and shown to operators only. Aadhaar is masked on the printed document per UIDAI norms.</p>
   </div>`;
 }
 function pickKyc(input){const f=input.files[0];const h=document.getElementById('kychint');if(!f)return;
@@ -742,13 +742,14 @@ function pickKyc(input){const f=input.files[0];const h=document.getElementById('
   if(f.size>7*1024*1024){h.textContent='File must be 7MB or smaller';S.kycFile=null;return;}
   const r=new FileReader();r.onload=()=>{S.kycFile={name:f.name,mime:f.type,data:r.result};h.textContent=f.name+' ready';};r.readAsDataURL(f);}
 async function saveKyc(ref){const err=document.getElementById('kyc_err');err.textContent='';
-  const body={id_type:val('k_type'),id_last4:val('k_last4'),serial:val('k_serial'),consent:document.getElementById('k_consent').checked?1:0,consent_name:val('k_name')};
+  const body={id_type:val('k_type'),id_number:val('k_idnum'),serial:val('k_serial'),consent:document.getElementById('k_consent').checked?1:0,consent_name:val('k_name')};
   if(S.kycFile)body.doc=S.kycFile;
   try{S.kyc=await aapi('/service/orders/'+ref+'/kyc',{method:'PUT',body:JSON.stringify(body)});S.kycFile=null;toast('KYC saved');renderFlow();}
   catch(e){err.textContent=e.message;}}
 async function viewKyc(ref){try{const r=await fetch(API+'/service/orders/'+ref+'/kyc/doc',{headers:{Authorization:'Bearer '+SESSION}});if(!r.ok)throw 0;const blob=await r.blob();window.open(URL.createObjectURL(blob),'_blank');}catch(e){alert('Could not load the document.');}}
 async function kycSendOtp(ref){const h=document.getElementById('kyc_otp_hint');h.textContent='Sending…';try{const r=await aapi('/service/orders/'+ref+'/kyc/send-otp',{method:'POST',body:JSON.stringify({})});h.textContent='OTP sent to ••••'+(r.phone_last4||'')+(r.dev_code?(' (demo code '+r.dev_code+')'):'');}catch(e){h.textContent=e.message;}}
 async function kycSign(ref){const code=val('k_otp');const h=document.getElementById('kyc_otp_hint');if(!code){h.textContent='Enter the OTP the seller received';return;}try{S.kyc=await aapi('/service/orders/'+ref+'/kyc/sign',{method:'POST',body:JSON.stringify({code})});toast('Consent signed via OTP');renderFlow();}catch(e){h.textContent=e.message;}}
+function maskId(type,num){num=String(num||'').trim();if(!num)return '—';if(/aadha?r/i.test(type||'')){const d=num.replace(/\D/g,'');return d.length>4?('XXXX XXXX '+d.slice(-4)):num;}return num;}
 async function genKycDoc(ref){const o=S.tracked,k=S.kyc||{};const bn=SET.brand_name||'ByteFix';
   let docHtml='';
   if(k.has_doc){try{const r=await fetch(API+'/service/orders/'+ref+'/kyc/doc',{headers:{Authorization:'Bearer '+SESSION}});const blob=await r.blob();const url=URL.createObjectURL(blob);docHtml=blob.type.indexOf('pdf')>=0?`<p><a href="${url}" target="_blank">Attached ID document (PDF)</a></p>`:`<img src="${url}" style="max-width:340px;border:1px solid #ccc;border-radius:8px;margin-top:6px">`;}catch(e){}}
@@ -761,7 +762,7 @@ async function genKycDoc(ref){const o=S.tracked,k=S.kyc||{};const bn=SET.brand_n
    <table>
      ${row('Seller name',k.consent_name||o.customer_name)}
      ${row('Contact',(o.customer_phone||'')+'  '+(o.customer_email||''))}
-     ${row('ID type',(k.id_type||'')+(k.id_last4?(' (ending '+k.id_last4+')'):''))}
+     ${row('ID',(k.id_type||'')+': '+maskId(k.id_type,k.id_number||k.id_last4||''))}
      ${row('Device',o.device_label)}
      ${row('Serial / IMEI',k.serial)}
      ${row('Agreed amount',INR(o.amount))}
