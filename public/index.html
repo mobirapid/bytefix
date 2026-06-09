@@ -777,7 +777,9 @@ async function genKycDoc(ref){try{await persistKyc(ref);}catch(e){}const o=S.tra
      ${row('ID',(k.id_type||'')+': '+maskId(k.id_type,k.id_number||k.id_last4||''))}
      ${row('Device',o.device_label)}
      ${row('Serial / IMEI',k.serial)}
+     ${row('City',o.city)}
      ${row('Agreed amount',INR(o.amount))}
+     ${row('Processed by (operator)',k.operator_name||k.operator_username)}
    </table>
    <p><b>Declaration:</b> I, the seller named above, confirm that I am the rightful owner of the device described, that it is not lost, stolen, or under any legal encumbrance, and that I voluntarily sell it to ${esc(bn)}. I consent to the collection of my identity document for KYC and record-keeping as required by applicable law.</p>
    <p class="muted">${k.consent_method==='otp'?('Digitally signed via OTP to phone &bull;&bull;&bull;&bull;'+esc((k.signed_phone||'').slice(-4))+' &middot; '+esc(k.sign_ref||'')+(k.consent_at?(' &middot; '+new Date(k.consent_at).toLocaleString('en-IN')):'')):('Digital consent captured: '+(k.consent?'YES':'NO')+(k.consent_at?(' &middot; '+new Date(k.consent_at).toLocaleString('en-IN')):''))}</p>

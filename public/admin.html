@@ -414,7 +414,9 @@ async function ownershipDoc(ref){
      ${row('ID',(k.id_type||'')+': '+maskId(k.id_type,k.id_number||k.id_last4||''))}
      ${row('Device',o.device_label)}
      ${row('Serial / IMEI',k.serial)}
+     ${row('City',o.city)}
      ${row('Agreed amount',INR(o.amount))}
+     ${row('Processed by (operator)',k.operator_name||k.operator_username)}
    </table>
    <p><b>Declaration:</b> I, the seller named above, confirm that I am the rightful owner of the device described, that it is not lost, stolen, or under any legal encumbrance, and that I voluntarily sell it to ${e(bn)}. I consent to the collection of my identity document for KYC and record-keeping as required by applicable law.</p>
    <p class="muted">${signLine}</p>

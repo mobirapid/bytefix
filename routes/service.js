@@ -204,7 +204,10 @@ router.post('/orders/:ref/reviews', (req, res) => {
 /* ---------------- Resale KYC / ownership document ---------------- */
 function kycMeta(ref) {
   // Includes id_number — only ever returned to operators on flow-gated endpoints.
-  const r = db.prepare('SELECT order_ref,id_type,id_last4,id_number,serial,consent,consent_name,consent_at,consent_method,sign_ref,signed_phone,doc_name,doc_mime,doc_size,updated_at FROM order_kyc WHERE order_ref=?').get(ref);
+  const r = db.prepare(`SELECT k.order_ref,k.id_type,k.id_last4,k.id_number,k.serial,k.consent,k.consent_name,k.consent_at,
+      k.consent_method,k.sign_ref,k.signed_phone,k.doc_name,k.doc_mime,k.doc_size,k.updated_at,
+      u.name AS operator_name, u.username AS operator_username
+    FROM order_kyc k LEFT JOIN users u ON u.id=k.by_user WHERE k.order_ref=?`).get(ref);
   return r ? { ...r, has_doc: !!r.doc_name } : null;
 }
 function kycGuard(req, res) {
