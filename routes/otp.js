@@ -68,43 +68,40 @@ async function deliver(phone, code) {
   console.log(`[OTP] ${phone} -> ${code}`); // demo: no SMS provider configured
 }
 
-// POST /api/otp/send  { phone }
-router.post('/send', async (req, res) => {
-  const phone = norm(req.body.phone);
-  if (phone.length < 10) return res.status(400).json({ error: 'Enter a valid 10-digit mobile number' });
+// Core OTP sender — reusable so other routes (e.g. operator e-sign) don't need an
+// internal HTTP loopback (which fails under Passenger). Throws Error with .status.
+async function sendOtp(phoneRaw) {
+  const phone = norm(phoneRaw);
+  if (phone.length < 10) { const e = new Error('Enter a valid 10-digit mobile number'); e.status = 400; throw e; }
   const existing = codes.get(phone);
-  if (existing && Date.now() - existing.lastSent < 30000)
-    return res.status(429).json({ error: 'Please wait a few seconds before requesting another code' });
-  // 2Factor: send OUR generated code over the explicit SMS route (SMS only — no
-  // AUTOGEN voice fallback). We verify the code ourselves below.
+  if (existing && Date.now() - existing.lastSent < 30000) { const e = new Error('Please wait a few seconds before requesting another code'); e.status = 429; throw e; }
+  // 2Factor: send OUR generated code over the explicit SMS route (SMS only).
   if (twoFactorOn()) {
+    const cc = process.env.SMS_COUNTRY_CODE || '91';
+    const tpl = twoFactorTemplate();
+    const code = gen();
+    const url = `https://2factor.in/API/V1/${encodeURIComponent(twoFactorKey())}/SMS/+${cc}${phone}/${code}` + (tpl ? '/' + encodeURIComponent(tpl) : '');
     try {
-      const cc = process.env.SMS_COUNTRY_CODE || '91';
-      const tpl = twoFactorTemplate();
-      const code = gen();
-      const url = `https://2factor.in/API/V1/${encodeURIComponent(twoFactorKey())}/SMS/+${cc}${phone}/${code}`
-        + (tpl ? '/' + encodeURIComponent(tpl) : '');
       const r = await fetch(url);
       const d = await r.json().catch(() => ({}));
       if (d.Status !== 'Success') throw new Error(d.Details || ('2Factor ' + r.status));
-      codes.set(phone, { code, expires: Date.now() + 5 * 60000, attempts: 0, lastSent: Date.now() });
-      return res.json({ sent: true });
-    } catch (e) {
-      console.error('[OTP 2factor send]', e.message);
-      return res.status(502).json({ error: 'Could not send the code right now. Please try again.' });
-    }
+    } catch (err) { console.error('[OTP 2factor send]', err.message); const e = new Error('Could not send the code right now. Please try again.'); e.status = 502; throw e; }
+    codes.set(phone, { code, expires: Date.now() + 5 * 60000, attempts: 0, lastSent: Date.now() });
+    return { sent: true };
   }
   const code = STATIC_OTP || gen();
   if (!STATIC_OTP) {
-    try {
-      await deliver(phone, code);
-    } catch (e) {
-      console.error('[OTP] send failed:', e.message);
-      return res.status(502).json({ error: 'Could not send the code right now. Please try again.' });
-    }
+    try { await deliver(phone, code); }
+    catch (err) { console.error('[OTP] send failed:', err.message); const e = new Error('Could not send the code right now. Please try again.'); e.status = 502; throw e; }
   }
   codes.set(phone, { code, expires: Date.now() + 5 * 60000, attempts: 0, lastSent: Date.now() });
-  res.json({ sent: true, ...(DEV ? { dev_code: code } : {}) });
+  return { sent: true, ...(DEV ? { dev_code: code } : {}) };
+}
+
+// POST /api/otp/send  { phone }
+router.post('/send', async (req, res) => {
+  try { res.json(await sendOtp(req.body.phone)); }
+  catch (e) { res.status(e.status || 500).json({ error: e.message }); }
 });
 
 // POST /api/otp/verify  { phone, code } -> { token }
@@ -238,4 +235,4 @@ function phoneForToken(token) {
   return t.phone;
 }
 
-module.exports = { router, verifyBooking, phoneForToken, verifyCode, verifyEmailToken };
+module.exports = { router, verifyBooking, phoneForToken, verifyCode, verifyEmailToken, sendOtp };

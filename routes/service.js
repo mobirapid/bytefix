@@ -5,7 +5,7 @@ const crypto = require('crypto');
 const db = require('../db');
 const { requireAdmin, requirePerm, userFromToken, permsOf, rolesOf } = require('./auth');
 const { notify } = require('./notify');
-const { verifyCode } = require('./otp');
+const { verifyCode, sendOtp } = require('./otp');
 const router = express.Router();
 
 const COLORS = ['red', 'orange', 'yellow', 'lightgreen', 'darkgreen'];
@@ -238,15 +238,12 @@ router.post('/orders/:ref/kyc/send-otp', requirePerm('service_requests'), async 
   const o = kycGuard(req, res); if (!o) return;
   const phone = (o.customer_phone || '').replace(/\D/g, '');
   if (phone.length < 10) return res.status(400).json({ error: 'No valid phone on this order.' });
-  // reuse the public OTP send flow internally
   try {
-    const r = await fetch('http://127.0.0.1:' + (process.env.PORT || 3000) + '/api/otp/send', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone }),
-    });
-    const d = await r.json().catch(() => ({}));
-    if (!r.ok) return res.status(r.status).json(d);
-    res.json({ sent: true, phone_last4: phone.slice(-4), dev_code: d.dev_code });
-  } catch (e) { res.status(502).json({ error: 'Could not send the OTP.' }); }
+    const out = await sendOtp(phone); // direct call — no internal HTTP loopback
+    res.json({ sent: true, phone_last4: phone.slice(-4), dev_code: out.dev_code });
+  } catch (e) {
+    res.status(e.status || 502).json({ error: e.message || 'Could not send the OTP.' });
+  }
 });
 
 // Verify the seller's OTP and record it as a digital signature on the consent.
