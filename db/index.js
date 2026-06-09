@@ -217,6 +217,7 @@ for (const stmt of [
   "ALTER TABLE order_kyc ADD COLUMN verified INTEGER DEFAULT 0",
   "ALTER TABLE order_kyc ADD COLUMN verified_by INTEGER",
   "ALTER TABLE order_kyc ADD COLUMN verified_at TEXT",
+  "ALTER TABLE order_kyc ADD COLUMN qc TEXT",
 ]) { try { db.exec(stmt); } catch (e) {} }
 
 const _tpl = db.prepare('INSERT OR IGNORE INTO order_templates (key,type,status,label,subject,body) VALUES (?,?,?,?,?,?)');

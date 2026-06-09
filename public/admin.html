@@ -326,7 +326,7 @@ function ordersView(){
     ${orderDetails(o)}
     <div class="rowline"><span class="lbl-mini">Status</span>
       <select onchange="setStatus('${o.ref}',this.value)">${flowStatuses(o.type).map(s=>`<option value="${s.key}" ${o.status===s.key?'selected':''}>${esc(s.label)}</option>`).join('')||`<option>${esc(o.status)}</option>`}</select>
-      <button class="btn ghost" style="padding:7px 12px;font-size:13px;margin-left:auto" onclick="genInvoice('${o.ref}')">${o.type==='repair'?'Tax invoice':'Purchase voucher'}</button>${o.type==='sell'?`<button class="btn ghost" style="padding:7px 12px;font-size:13px" onclick="ownershipDoc('${o.ref}')">Purchase document</button>${o.has_doc?`<button class="btn ghost" style="padding:7px 12px;font-size:13px" onclick="adminViewId('${o.ref}')">View ID</button>`:''}${o.has_kyc?(o.kyc_verified?`<span class="badge2 darkgreen">KYC verified</span><button class="del-btn" onclick="verifyKyc('${o.ref}',0)">Revoke</button>`:`<span class="badge2 orange">KYC pending</span><button class="btn ink" style="padding:7px 12px;font-size:13px" onclick="verifyKyc('${o.ref}',1)">Verify KYC</button>`):''}`:''}</div>
+      <button class="btn ghost" style="padding:7px 12px;font-size:13px;margin-left:auto" onclick="genInvoice('${o.ref}')">${o.type==='repair'?'Tax invoice':'Purchase voucher'}</button>${o.type==='sell'?`<button class="btn ghost" style="padding:7px 12px;font-size:13px" onclick="ownershipDoc('${o.ref}')">Purchase document</button>${o.has_doc?`<button class="btn ghost" style="padding:7px 12px;font-size:13px" onclick="adminViewId('${o.ref}')">View ID</button>`:''}${o.has_kyc?(o.kyc_verified?`<span class="badge2 darkgreen">KYC verified</span><button class="del-btn" onclick="verifyKyc('${o.ref}',0)">Revoke</button>`:`<span class="badge2 orange">KYC pending</span><button class="btn ink" style="padding:7px 12px;font-size:13px" onclick="verifyKyc('${o.ref}',1)">Verify KYC</button>`):''}`:''}<button class="del-btn" style="margin-left:auto" onclick="deleteOrder('${o.ref}')">Delete</button></div>
   </div>`).join('')}</div>`;
 }
 function orderDetails(o){
@@ -355,6 +355,10 @@ function orderDetails(o){
   return '';
 }
 async function setStatus(ref,status){await api('/orders/'+ref+'/status',{method:'PUT',body:JSON.stringify({status})});flash('Order '+ref+' → '+status);boot();}
+async function deleteOrder(ref){if(!confirm('Delete order '+ref+'? This permanently removes it and its KYC, discussion & reviews. A confirmation code will be emailed to you.'))return;
+  let dev='';try{const r=await api('/orders/'+ref+'/delete-otp',{method:'POST'});dev=r.dev_code||'';}catch(e){flash(e.message);return;}
+  const code=prompt('Enter the confirmation code sent to your admin email'+(dev?(' (demo code: '+dev+')'):'')+':');if(!code)return;
+  try{await api('/orders/'+ref,{method:'DELETE',body:JSON.stringify({code:code.trim()})});data.orders=await api('/orders');flash('Order deleted');render(ordersView());}catch(e){flash(e.message);}}
 function genInvoice(ref){
   const o=(data.orders||[]).find(x=>x.ref===ref);if(!o)return;
   const s=data.settings||{};const bn=s.brand_name||'ByteFix';

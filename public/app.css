@@ -405,3 +405,8 @@ html,body{max-width:100%;overflow-x:hidden}   /* safety net against horizontal s
 .vlink{background:none;border:none;color:var(--green-bright);font-size:12.5px;font-weight:600;cursor:pointer;margin-top:5px;padding:0}
 .verr{color:#C0392B;font-size:12px;margin-top:5px}
 .vhint{font-size:12px;color:var(--ink-soft);white-space:nowrap}
+
+/* Repair QC checklist */
+.qcwrap{display:flex;flex-direction:column;gap:7px}
+.qcitem{display:flex;align-items:flex-start;gap:8px;font-size:13.5px;color:var(--ink);cursor:pointer}
+.qcitem input{margin-top:2px;accent-color:var(--green);width:16px;height:16px;flex:0 0 auto}

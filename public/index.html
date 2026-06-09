@@ -652,6 +652,46 @@ async function postReview(ref,role){
   }catch(e){err.textContent=e.message;}
 }
 
+async function genHandover(ref){try{await persistKyc(ref);}catch(e){}const o=S.tracked,k=S.kyc||{};const bn=SET.brand_name||'ByteFix';
+  let d={};try{d=JSON.parse(o.details||'{}');}catch(e){}
+  let qc=[];try{qc=JSON.parse(k.qc||'[]');}catch(e){}
+  const items=Array.isArray(d.items)?d.items:[];
+  const row=(l,v)=>`<tr><td class="lbl">${l}</td><td>${esc(v==null||v===''?'—':v)}</td></tr>`;
+  const repairs=items.length?items.map(it=>esc(it.name)+' ('+INR(it.price)+')').join(', '):esc(o.device_label||'');
+  const vBanner=k.verified
+    ? `<div style="border:2px solid #2E7D32;background:#E7F4EA;color:#1b5e20;padding:10px 14px;border-radius:8px;font-weight:bold;margin:14px 0">✓ VERIFIED by ${esc(bn)}${(k.verified_name||k.verified_username)?(' · '+esc(k.verified_name||k.verified_username)):''}${k.verified_at?(' · '+new Date(k.verified_at).toLocaleString('en-IN')):''}</div>`
+    : `<div style="border:2px solid #C0392B;background:#FCEBE9;color:#922;padding:10px 14px;border-radius:8px;font-weight:bold;margin:14px 0">NOT VERIFIED — this document is NOT valid until verified by ${esc(bn)}.</div>`;
+  const signLine=k.consent_method==='otp'
+    ? 'Accepted &amp; e-signed via OTP to phone ••••'+esc((k.signed_phone||'').slice(-4))+' · '+esc(k.sign_ref||'')+(k.consent_at?(' · '+new Date(k.consent_at).toLocaleString('en-IN')):'')
+    : 'Customer acceptance recorded: '+(k.consent?'YES':'NO');
+  const qcHtml=qc.length?('<ul>'+qc.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>'):'<p class="muted">No QC items recorded.</p>';
+  const html=`<!doctype html><html><head><meta charset="utf-8"><title>Service Completion ${esc(o.ref)}</title>
+   <style>body{font-family:Arial,Helvetica,sans-serif;color:#111;max-width:720px;margin:24px auto;padding:0 22px;line-height:1.55}h1{font-size:20px;margin:0}table{width:100%;border-collapse:collapse;margin:16px 0}td{padding:8px 10px;border:1px solid #ccd;font-size:14px}.lbl{background:#f3f5f8;font-weight:bold;width:38%}.muted{color:#666;font-size:12px}ul{margin:8px 0 0 18px}.sig{margin-top:54px;display:flex;justify-content:space-between;gap:30px}.sig div{flex:1;border-top:1px solid #333;padding-top:6px;font-size:13px}</style></head>
+   <body>
+   <h1>${esc(bn)} — Service Completion, Handover &amp; Warranty</h1>
+   <p class="muted">Reference: ${esc(o.ref)} &nbsp;·&nbsp; Generated: ${new Date().toLocaleString('en-IN')}</p>
+   ${vBanner}
+   <table>
+     ${row('Customer',o.customer_name)}
+     ${row('Contact',(o.customer_phone||'')+'  '+(o.customer_email||''))}
+     ${row('Device',o.device_label)}
+     ${row('Serial / IMEI',k.serial)}
+     ${row('City',o.city)}
+     ${row('Repairs done',repairs)}
+     ${row('Amount',INR(o.amount))}
+     ${row('Warranty','12 months on parts &amp; labour')}
+     ${row('Processed by (operator)',k.operator_name||k.operator_username)}
+   </table>
+   <p><b>Quality checks performed:</b></p>${qcHtml}
+   <p><b>Customer declaration:</b> I confirm I have checked the device, the agreed repair is complete and working, and I accept the handover. Warranty terms apply as stated above.</p>
+   <p class="muted">${signLine}</p>
+   <div class="sig"><div>Customer signature</div><div>For ${esc(bn)} (operator)</div></div>
+   <scr`+`ipt>window.onload=function(){setTimeout(function(){window.print();},350);}</scr`+`ipt>
+   </body></html>`;
+  const w=window.open('','_blank');if(!w){alert('Please allow pop-ups to generate the document.');return;}
+  w.document.write(html);w.document.close();
+}
+
 /* ---------------- Staff (operator) login on the main app ---------------- */
 function staffLoginFlow(){S.staff={};enterFlow(staffLogin);}
 function staffLogin(){return `<div class="step-h">Staff sign in</div><p class="fsub">Operators sign in here to manage service requests.</p>
@@ -703,9 +743,34 @@ function serviceDetail(){
     <p class="fsub">${esc(o.device_label||'')} · ${esc(o.customer_name||'—')} · ${esc(o.customer_phone||'')}</p>
     <div class="field"><label>Update status</label>
       <select id="svc_status" onchange="opSetStatus('${o.ref}',this.value)">${steps.map(s=>`<option value="${s.key}" ${o.status===s.key?'selected':''}>${esc(s.label)}</option>`).join('')}</select></div>
-    ${kycCard(o)}
+    ${o.type==='sell'?kycCard(o):repairCard(o)}
     ${threadHTML(o.ref)}
     ${reviewHTML(o.ref,'operator')}`;
+}
+function esignBlock(o,k,who){return `<div class="esign">
+      <div class="thread-h" style="font-size:14px;margin-bottom:6px">${who} e-sign (OTP) ${k.consent_method==='otp'?`<span class="badge2 darkgreen">signed · ${esc(k.sign_ref||'')}</span>`:''}</div>
+      ${k.consent_method==='otp'?`<p class="filehint">Signed via OTP to phone ••••${esc((k.signed_phone||'').slice(-4))}${k.consent_at?(' · '+new Date(k.consent_at).toLocaleString('en-IN')):''}</p>`:''}
+      <div class="composer-row" style="margin-top:6px">
+        <button class="btn btn-ghost" onclick="kycSendOtp('${o.ref}')">Send OTP to ${esc(who.toLowerCase())} ••••${esc((o.customer_phone||'').slice(-4))}</button>
+        <input id="k_otp" inputmode="numeric" maxlength="6" placeholder="OTP" style="width:110px;border:1px solid var(--line);border-radius:10px;padding:9px 11px">
+        <button class="btn green" onclick="kycSign('${o.ref}')">Verify &amp; sign</button>
+      </div>
+      <span class="filehint" id="kyc_otp_hint"></span>
+    </div>`;}
+function repairCard(o){const k=S.kyc||{};let qc=[];try{qc=JSON.parse(k.qc||'[]');}catch(e){}
+  const items=['Device powers on & boots','Reported issue resolved','No new physical damage','Buttons, ports, camera & audio tested','Accessories returned to customer'];
+  return `<div class="thread"><div class="thread-h">Repair QC &amp; handover ${k.consent?'<span class="badge2 darkgreen">customer accepted</span>':''}</div>
+    <div style="margin:2px 0 6px;color:var(--ink-soft);font-size:12.5px">Quality checks performed after repair:</div>
+    <div class="qcwrap">${items.map(it=>`<label class="qcitem"><input type="checkbox" data-qc value="${esc(it)}" ${qc.includes(it)?'checked':''}> ${esc(it)}</label>`).join('')}</div>
+    <div class="kyc-grid" style="margin-top:10px"><label>Device serial / IMEI<input id="k_serial" value="${esc(k.serial||'')}" placeholder="serial / IMEI"></label></div>
+    <label class="prefrow" style="margin-top:10px"><input type="checkbox" id="k_consent" ${k.consent?'checked':''}> Customer has checked the device and accepts the completed repair</label>
+    <label class="fl" style="display:block;margin-top:6px;font-size:12px;color:var(--ink-soft)">Customer name</label>
+    <input id="k_name" value="${esc(k.consent_name||o.customer_name||'')}" placeholder="Full name" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:9px 11px">
+    ${esignBlock(o,k,'Customer')}
+    <div class="err" id="kyc_err"></div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px"><button class="btn green" onclick="saveKyc('${o.ref}')">Save QC</button>
+      <button class="btn btn-ghost" onclick="genHandover('${o.ref}')">Generate handover + warranty</button></div>
+  </div>`;
 }
 function kycCard(o){const k=S.kyc||{};const types=['Aadhaar','PAN','Driving Licence','Passport','Voter ID'];
   return `<div class="thread"><div class="thread-h">Seller KYC &amp; ownership ${k.consent?'<span class="badge2 darkgreen">consent recorded</span>':''}</div>
@@ -744,10 +809,12 @@ function pickKyc(input){const f=input.files[0];const h=document.getElementById('
   const r=new FileReader();r.onload=()=>{S.kycFile={name:f.name,mime:f.type,data:r.result};h.textContent=f.name+' ready';};r.readAsDataURL(f);}
 // Persist whatever's currently typed in the KYC card (used by Save, Sign & Generate).
 async function persistKyc(ref){
-  if(!document.getElementById('k_idnum'))return S.kyc; // card not on screen
+  if(!document.getElementById('k_serial'))return S.kyc; // KYC/QC card not on screen
   const cb=document.getElementById('k_consent');
   const body={id_type:val('k_type'),id_number:val('k_idnum'),serial:val('k_serial'),consent_name:val('k_name')};
   if(cb)body.consent=cb.checked?1:0;
+  const qcEls=document.querySelectorAll('input[data-qc]');
+  if(qcEls.length)body.qc=JSON.stringify([...qcEls].filter(x=>x.checked).map(x=>x.value));
   if(S.kycFile)body.doc=S.kycFile;
   S.kyc=await aapi('/service/orders/'+ref+'/kyc',{method:'PUT',body:JSON.stringify(body)});S.kycFile=null;return S.kyc;
 }
