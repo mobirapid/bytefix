@@ -261,6 +261,18 @@ db.tx = (fn) => { db.exec('BEGIN'); try { const r = fn(); db.exec('COMMIT'); ret
   db.prepare(`INSERT OR IGNORE INTO user_roles (user_id, role_key)
               SELECT id, 'customer' FROM users
               WHERE id NOT IN (SELECT user_id FROM user_roles)`).run();
+
+  // 6) Starter legal/policy content (editable in Admin → Settings → Legal).
+  const setIf = db.prepare('INSERT OR IGNORE INTO settings (key,value) VALUES (?,?)');
+  const PLACEHOLDER = '\n\n(Replace this starter text with your own policy reviewed by a legal advisor.)';
+  setIf.run('policy_privacy',
+    'Privacy Policy\n\nWe collect only the information needed to provide repair and resale services — your name, phone number, email, address and device details. We use it to process your bookings, verify your identity (OTP), keep you updated, and meet legal obligations. We do not sell your personal data. You can request access to or deletion of your data from your account, or by contacting us.' + PLACEHOLDER);
+  setIf.run('policy_terms',
+    'Terms of Service\n\nBy using this site you agree to provide accurate information and to use the service lawfully. Repair quotes are estimates confirmed after a free diagnosis; resale quotes are valid for the stated period and subject to device verification at pickup. Warranty terms apply as stated for each repair.' + PLACEHOLDER);
+  setIf.run('policy_refund',
+    'Refund & Cancellation Policy\n\nYou may cancel a booking before service begins at no charge. Repair charges are payable only after you approve the final quote. Resale payments are made after the device is verified at pickup. Refunds, where applicable, are processed to the original payment method within 5–7 business days.' + PLACEHOLDER);
+  setIf.run('policy_shipping',
+    'Shipping & Pickup Policy\n\nWe offer free pickup and drop in serviceable cities at the slot you choose. Timelines are estimates and may vary with location and device condition. Please keep the device and any agreed accessories ready at pickup.' + PLACEHOLDER);
 })();
 
 module.exports = db;

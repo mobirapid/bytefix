@@ -360,3 +360,9 @@ html,body{max-width:100%;overflow-x:hidden}   /* safety net against horizontal s
 .aichat-in input{flex:1;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-family:inherit;font-size:14px}
 .aichat-in .cta{padding:10px 14px}
 @media(max-width:480px){.aichat-panel{right:10px;left:10px;width:auto;bottom:78px;height:70vh}.aichat-bubble{right:14px;bottom:14px}}
+
+/* Legal / policy pages */
+.policy-doc{margin-top:18px;color:var(--ink-soft);font-size:15px;line-height:1.7;max-width:70ch}
+.policy-doc p{margin-bottom:14px}
+.foot-legal a{cursor:pointer;text-decoration:none}
+.foot-legal a:hover{color:#fff}

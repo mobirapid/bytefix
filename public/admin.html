@@ -432,6 +432,13 @@ function settingsView(){
     <textarea class="w" rows="3" style="border:1px solid var(--line);border-radius:10px;padding:11px;font-family:inherit;font-size:14px;resize:vertical" placeholder="One or two sentences describing your store for Google & social shares." onchange="saveSetting('meta_description',this.value)">${esc(s.meta_description||'')}</textarea>
     <div style="font-size:12px;color:var(--ink-soft);margin-top:8px">Used in the page title tag area, Open Graph share cards, and structured data.</div>
   </div>
+  <div class="eyebrow">Legal &amp; policies</div>
+  <div class="card" style="padding:14px 16px">
+    <div style="font-size:12px;color:var(--ink-soft);margin-bottom:10px">These appear as pages linked in the storefront footer. Have a legal advisor review the final wording. Plain text; blank lines start new paragraphs.</div>
+    ${[['policy_privacy','Privacy Policy'],['policy_terms','Terms of Service'],['policy_refund','Refund &amp; Cancellation'],['policy_shipping','Shipping &amp; Pickup']].map(([k,lbl])=>`
+      <div style="font-weight:600;font-size:12.5px;margin:10px 0 5px">${lbl}</div>
+      <textarea class="w" rows="5" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:11px;font-family:inherit;font-size:13.5px;resize:vertical" onchange="saveSetting('${k}',this.value)">${esc(s[k]||'')}</textarea>`).join('')}
+  </div>
   <div class="eyebrow">Pricing</div>
   <div class="crow card" style="border-radius:12px"><div class="grow" style="font-weight:600">GST applied to repair total</div><input class="num" type="number" value="${s.gst_percent||18}" onchange="saveSetting('gst_percent',+this.value)"> %</div>
   <p class="lead" style="margin-top:18px">In production this screen also manages users, roles, and an audit log of changes. For real SEO, the storefront should be server-rendered (e.g. Next.js) with per-locality pages.</p>`;

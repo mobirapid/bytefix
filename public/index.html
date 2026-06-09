@@ -167,8 +167,10 @@ function loginSignup(){return `<div class="step-h">Create your account</div><p c
   <div class="field"><label>Full name</label><input id="su_name" placeholder="Your name" value="${esc(S.name||'')}"></div>
   <div class="field"><label>Email</label><input id="su_email" type="email" placeholder="you@email.com" value="${esc(S.email||'')}"></div>
   <label class="prefrow"><input type="checkbox" id="su_eu" checked> Email me updates about my orders</label>
+  <label class="prefrow"><input type="checkbox" id="su_consent"> I agree to the <a onclick="showPolicy('terms');return false" href="#">Terms</a> &amp; <a onclick="showPolicy('privacy');return false" href="#">Privacy Policy</a></label>
   <div class="dock"><button class="btn green" id="subtn" onclick="finishSignup()">${S.fromBooking?'Create account & continue →':'Create account →'}</button></div>`;}
 async function finishSignup(){clearErrs();const name=val('su_name'),email=val('su_email');let ok=true;if(name.length<2){setErr('su_name','Please enter your name');ok=false;}if(!EMAIL_RE.test(email)){setErr('su_email','Enter a valid email address');ok=false;}if(!ok)return;
+  if(!document.getElementById('su_consent').checked){alert('Please accept the Terms & Privacy Policy to continue.');return;}
   const eu=document.getElementById('su_eu').checked;const btn=document.getElementById('subtn');btn.disabled=true;btn.textContent='Creating…';
   try{const s=await api('/account/save',{method:'POST',body:JSON.stringify({booking_token:S.booking_token,name,email,city:CITY,email_updates:eu?1:0})});setSession(s.session,s.user);S.name=name;S.email=email;
     if(S.fromBooking){await placeOrder();}else{showProfile();}
@@ -351,7 +353,16 @@ function footerHTML(){const bn=SET.brand_name||'ReGear';return `<footer class="s
     <div>✉ ${esc(SET.email||'hello@regear.in')}</div>
     <div>⌂ ${esc(SET.address||'HSR Layout, '+(SET.city||'Bengaluru'))}</div>
   </div>
-</div><div class="foot-bottom"><span>© ${new Date().getFullYear()} ${esc(bn)}. All rights reserved.</span><span>Privacy · Terms · Refunds</span></div></div></footer>`;}
+</div><div class="foot-bottom"><span>© ${new Date().getFullYear()} ${esc(bn)}. All rights reserved.</span><span class="foot-legal"><a onclick="showPolicy('privacy');return false" href="#">Privacy</a> · <a onclick="showPolicy('terms');return false" href="#">Terms</a> · <a onclick="showPolicy('refund');return false" href="#">Refunds</a> · <a onclick="showPolicy('shipping');return false" href="#">Shipping</a></span></div></div></footer>`;}
+const POLICY_TITLES={privacy:'Privacy Policy',terms:'Terms of Service',refund:'Refund & Cancellation Policy',shipping:'Shipping & Pickup Policy'};
+function showPolicy(key){mode='page';stack=[];syncHeader();
+  const raw=SET['policy_'+key]||'';const title=POLICY_TITLES[key]||'Policy';
+  const body=raw?esc(raw).replace(/\n{2,}/g,'</p><p>').replace(/\n/g,'<br>'):'This policy has not been published yet.';
+  document.getElementById('view').innerHTML=`<section class="block"><div class="container" style="max-width:760px">
+    <div class="kicker" style="text-align:left">Legal</div><h2 style="text-align:left">${esc(title)}</h2>
+    <div class="policy-doc"><p>${body}</p></div>
+    <div style="margin-top:24px"><button class="btn green" onclick="showHome()">Back to home</button></div>
+  </div></section>`+footerHTML();window.scrollTo({top:0});}
 
 /* ---------------- CORPORATE (B2B) ---------------- */
 function corpBandHTML(){return `<section class="block" style="padding-top:0"><div class="container"><div class="corp-band">
@@ -468,6 +479,7 @@ function schedule(){const fix=S.mode==='fix';return `<div class="step-h">${fix?'
   <div class="field"><label>Email (for order updates)</label><input id="f_email" type="email" placeholder="you@email.com" value="${esc(S.email||'')}"></div>
   <div class="field"><label>Address</label><button type="button" class="locbtn" id="locBtn" onclick="useLocation('locBtn','f_addr')"><span>📍</span> Use my current location</button><textarea id="f_addr" rows="2" placeholder="Flat, street, area, city, pincode">${esc(S.address||'')}</textarea></div>
   <div class="field" id="slotField"><label>Pick a slot</label><div class="slots">${SLOTS.map((s,i)=>`<div class="slot ${S.slot===s?'sel':''}" id="sl${i}" onclick="selSlot(${i})">${s}</div>`).join('')}</div></div>
+  <label class="prefrow" id="consentRow" style="margin-top:6px"><input type="checkbox" id="f_consent" ${S.consent?'checked':''}> I agree to the <a onclick="showPolicy('terms');return false" href="#">Terms</a> &amp; <a onclick="showPolicy('privacy');return false" href="#">Privacy Policy</a></label>
   <div class="dock"><button class="btn ${fix?'green':'amber'}" id="cbtn" onclick="startOtp()">Continue to verify →</button><p class="note">We'll text a one-time code to confirm your number.</p></div>`;}
 function selSlot(i){S.slot=SLOTS[i];document.querySelectorAll('.slot').forEach(s=>s.classList.remove('sel'));document.getElementById('sl'+i).classList.add('sel');fieldErr(document.getElementById('slotField'),'');}
 function startOtp(){
@@ -480,6 +492,8 @@ function startOtp(){
   if(!EMAIL_RE.test(S.email)){setErr('f_email','Enter a valid email address');ok=false;}
   if(S.address.length<8){setErr('f_addr','Please enter your full address');ok=false;}
   if(!S.slot){fieldErr(document.getElementById('slotField'),'Please pick a slot');ok=false;}
+  S.consent=document.getElementById('f_consent')&&document.getElementById('f_consent').checked;
+  if(!S.consent){const cr=document.getElementById('consentRow');if(cr)cr.style.color='#C0392B';ok=false;}
   if(!ok)return;
   sendOtp(true);
 }
