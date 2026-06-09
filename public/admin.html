@@ -326,7 +326,7 @@ function ordersView(){
     ${orderDetails(o)}
     <div class="rowline"><span class="lbl-mini">Status</span>
       <select onchange="setStatus('${o.ref}',this.value)">${flowStatuses(o.type).map(s=>`<option value="${s.key}" ${o.status===s.key?'selected':''}>${esc(s.label)}</option>`).join('')||`<option>${esc(o.status)}</option>`}</select>
-      <button class="btn ghost" style="padding:7px 12px;font-size:13px;margin-left:auto" onclick="genInvoice('${o.ref}')">${o.type==='repair'?'Tax invoice':'Purchase voucher'}</button></div>
+      <button class="btn ghost" style="padding:7px 12px;font-size:13px;margin-left:auto" onclick="genInvoice('${o.ref}')">${o.type==='repair'?'Tax invoice':'Purchase voucher'}</button>${o.type==='sell'?`<button class="btn ghost" style="padding:7px 12px;font-size:13px" onclick="ownershipDoc('${o.ref}')">Purchase document</button>`:''}</div>
   </div>`).join('')}</div>`;
 }
 function orderDetails(o){
@@ -388,6 +388,39 @@ function genInvoice(ref){
    <p class="muted">${note}</p>
    <p class="muted">This is a computer-generated document.</p>
    <scr`+`ipt>window.onload=function(){setTimeout(function(){window.print();},350);}</scr`+`ipt>
+   </body></html>`;
+  const w=window.open('','_blank');if(!w){flash('Allow pop-ups to print');return;}w.document.write(html);w.document.close();
+}
+function maskId(type,num){num=String(num||'').trim();if(!num)return '—';if(/aadh/i.test(type||'')){const d=num.replace(/\D/g,'');return d.length>4?('XXXX XXXX '+d.slice(-4)):num;}return num;}
+async function ownershipDoc(ref){
+  const o=(data.orders||[]).find(x=>x.ref===ref);if(!o)return;
+  let k={};try{k=await api('/service/orders/'+ref+'/kyc');}catch(e){k={};}
+  const s=data.settings||{};const bn=s.brand_name||'ByteFix';
+  let docHtml='';
+  if(k.has_doc){try{const r=await fetch(API+'/service/orders/'+ref+'/kyc/doc',{headers:{Authorization:'Bearer '+TOKEN}});const blob=await r.blob();const url=URL.createObjectURL(blob);docHtml=blob.type.indexOf('pdf')>=0?`<p><a href="${url}" target="_blank">Attached ID document (PDF)</a></p>`:`<img src="${url}" style="max-width:340px;border:1px solid #ccc;border-radius:8px;margin-top:6px">`;}catch(e){}}
+  const e=x=>String(x==null?'':x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+  const row=(l,v)=>`<tr><td class="lbl">${l}</td><td>${e(v||'—')}</td></tr>`;
+  const signLine=k.consent_method==='otp'
+    ? 'Digitally signed via OTP to phone &bull;&bull;&bull;&bull;'+e((k.signed_phone||'').slice(-4))+' &middot; '+e(k.sign_ref||'')+(k.consent_at?(' &middot; '+new Date(k.consent_at).toLocaleString('en-IN')):'')
+    : 'Consent captured: '+(k.consent?'YES':'NO')+(k.consent_at?(' &middot; '+new Date(k.consent_at).toLocaleString('en-IN')):'');
+  const html=`<!doctype html><html><head><meta charset="utf-8"><title>Ownership Declaration ${e(o.ref)}</title>
+   <style>body{font-family:Arial,Helvetica,sans-serif;color:#111;max-width:720px;margin:24px auto;padding:0 22px;line-height:1.55}h1{font-size:20px;margin:0}table{width:100%;border-collapse:collapse;margin:16px 0}td{padding:8px 10px;border:1px solid #ccd;font-size:14px}.lbl{background:#f3f5f8;font-weight:bold;width:38%}.muted{color:#666;font-size:12px}.sig{margin-top:54px;display:flex;justify-content:space-between;gap:30px}.sig div{flex:1;border-top:1px solid #333;padding-top:6px;font-size:13px}</style></head>
+   <body>
+   <h1>${e(bn)} &mdash; Device Sale &amp; Ownership Declaration</h1>
+   <p class="muted">Reference: ${e(o.ref)} &nbsp;&middot;&nbsp; Generated: ${new Date().toLocaleString('en-IN')}</p>
+   <table>
+     ${row('Seller name',k.consent_name||o.customer_name)}
+     ${row('Contact',(o.customer_phone||'')+'  '+(o.customer_email||''))}
+     ${row('ID',(k.id_type||'')+': '+maskId(k.id_type,k.id_number||k.id_last4||''))}
+     ${row('Device',o.device_label)}
+     ${row('Serial / IMEI',k.serial)}
+     ${row('Agreed amount',INR(o.amount))}
+   </table>
+   <p><b>Declaration:</b> I, the seller named above, confirm that I am the rightful owner of the device described, that it is not lost, stolen, or under any legal encumbrance, and that I voluntarily sell it to ${e(bn)}. I consent to the collection of my identity document for KYC and record-keeping as required by applicable law.</p>
+   <p class="muted">${signLine}</p>
+   ${docHtml?('<p><b>ID document on file:</b></p>'+docHtml):''}
+   <div class="sig"><div>Seller signature</div><div>For ${e(bn)} (operator)</div></div>
+   <scr`+`ipt>window.onload=function(){setTimeout(function(){window.print();},400);}</scr`+`ipt>
    </body></html>`;
   const w=window.open('','_blank');if(!w){flash('Allow pop-ups to print');return;}w.document.write(html);w.document.close();
 }
