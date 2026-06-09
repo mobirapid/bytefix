@@ -690,6 +690,16 @@ function kycCard(o){const k=S.kyc||{};const types=['Aadhaar','PAN','Driving Lice
     <label class="prefrow" style="margin-top:10px"><input type="checkbox" id="k_consent" ${k.consent?'checked':''}> Seller is present and consents to KYC, and confirms rightful ownership of the device</label>
     <label class="fl" style="display:block;margin-top:6px;font-size:12px;color:var(--ink-soft)">Seller name (as declared)</label>
     <input id="k_name" value="${esc(k.consent_name||'')}" placeholder="Full name" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:9px 11px">
+    <div class="esign">
+      <div class="thread-h" style="font-size:14px;margin-bottom:6px">Seller e-sign (OTP) ${k.consent_method==='otp'?`<span class="badge2 darkgreen">signed · ${esc(k.sign_ref||'')}</span>`:''}</div>
+      ${k.consent_method==='otp'?`<p class="filehint">Signed via OTP to phone ••••${esc((k.signed_phone||'').slice(-4))}${k.consent_at?(' · '+new Date(k.consent_at).toLocaleString('en-IN')):''}</p>`:''}
+      <div class="composer-row" style="margin-top:6px">
+        <button class="btn btn-ghost" onclick="kycSendOtp('${o.ref}')">Send OTP to seller ••••${esc((o.customer_phone||'').slice(-4))}</button>
+        <input id="k_otp" inputmode="numeric" maxlength="6" placeholder="OTP" style="width:110px;border:1px solid var(--line);border-radius:10px;padding:9px 11px">
+        <button class="btn green" onclick="kycSign('${o.ref}')">Verify &amp; sign</button>
+      </div>
+      <span class="filehint" id="kyc_otp_hint"></span>
+    </div>
     <div class="err" id="kyc_err"></div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px"><button class="btn green" onclick="saveKyc('${o.ref}')">Save KYC</button>
       <button class="btn btn-ghost" onclick="genKycDoc('${o.ref}')">Generate document</button></div>
@@ -706,6 +716,8 @@ async function saveKyc(ref){const err=document.getElementById('kyc_err');err.tex
   try{S.kyc=await aapi('/service/orders/'+ref+'/kyc',{method:'PUT',body:JSON.stringify(body)});S.kycFile=null;toast('KYC saved');renderFlow();}
   catch(e){err.textContent=e.message;}}
 async function viewKyc(ref){try{const r=await fetch(API+'/service/orders/'+ref+'/kyc/doc',{headers:{Authorization:'Bearer '+SESSION}});if(!r.ok)throw 0;const blob=await r.blob();window.open(URL.createObjectURL(blob),'_blank');}catch(e){alert('Could not load the document.');}}
+async function kycSendOtp(ref){const h=document.getElementById('kyc_otp_hint');h.textContent='Sending…';try{const r=await aapi('/service/orders/'+ref+'/kyc/send-otp',{method:'POST',body:JSON.stringify({})});h.textContent='OTP sent to ••••'+(r.phone_last4||'')+(r.dev_code?(' (demo code '+r.dev_code+')'):'');}catch(e){h.textContent=e.message;}}
+async function kycSign(ref){const code=val('k_otp');const h=document.getElementById('kyc_otp_hint');if(!code){h.textContent='Enter the OTP the seller received';return;}try{S.kyc=await aapi('/service/orders/'+ref+'/kyc/sign',{method:'POST',body:JSON.stringify({code})});toast('Consent signed via OTP');renderFlow();}catch(e){h.textContent=e.message;}}
 async function genKycDoc(ref){const o=S.tracked,k=S.kyc||{};const bn=SET.brand_name||'ByteFix';
   let docHtml='';
   if(k.has_doc){try{const r=await fetch(API+'/service/orders/'+ref+'/kyc/doc',{headers:{Authorization:'Bearer '+SESSION}});const blob=await r.blob();const url=URL.createObjectURL(blob);docHtml=blob.type.indexOf('pdf')>=0?`<p><a href="${url}" target="_blank">Attached ID document (PDF)</a></p>`:`<img src="${url}" style="max-width:340px;border:1px solid #ccc;border-radius:8px;margin-top:6px">`;}catch(e){}}
@@ -724,7 +736,7 @@ async function genKycDoc(ref){const o=S.tracked,k=S.kyc||{};const bn=SET.brand_n
      ${row('Agreed amount',INR(o.amount))}
    </table>
    <p><b>Declaration:</b> I, the seller named above, confirm that I am the rightful owner of the device described, that it is not lost, stolen, or under any legal encumbrance, and that I voluntarily sell it to ${esc(bn)}. I consent to the collection of my identity document for KYC and record-keeping as required by applicable law.</p>
-   <p class="muted">Digital consent captured: ${k.consent?'YES':'NO'}${k.consent_at?(' · '+new Date(k.consent_at).toLocaleString('en-IN')):''}</p>
+   <p class="muted">${k.consent_method==='otp'?('Digitally signed via OTP to phone &bull;&bull;&bull;&bull;'+esc((k.signed_phone||'').slice(-4))+' &middot; '+esc(k.sign_ref||'')+(k.consent_at?(' &middot; '+new Date(k.consent_at).toLocaleString('en-IN')):'')):('Digital consent captured: '+(k.consent?'YES':'NO')+(k.consent_at?(' &middot; '+new Date(k.consent_at).toLocaleString('en-IN')):''))}</p>
    ${docHtml?('<p><b>ID document on file:</b></p>'+docHtml):''}
    <div class="sig"><div>Seller signature</div><div>For ${esc(bn)} (operator)</div></div>
    <scr`+`ipt>window.onload=function(){setTimeout(function(){window.print();},400);}</scr`+`ipt>

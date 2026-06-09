@@ -198,8 +198,14 @@ db.exec(`CREATE TABLE IF NOT EXISTS order_kyc (
   consent INTEGER DEFAULT 0, consent_name TEXT, consent_at TEXT,
   by_user INTEGER, ip TEXT,
   doc_name TEXT, doc_mime TEXT, doc_size INTEGER, doc_data BLOB,
+  consent_method TEXT, sign_ref TEXT, signed_phone TEXT,
   updated_at TEXT DEFAULT (datetime('now'))
 );`);
+for (const stmt of [
+  "ALTER TABLE order_kyc ADD COLUMN consent_method TEXT",
+  "ALTER TABLE order_kyc ADD COLUMN sign_ref TEXT",
+  "ALTER TABLE order_kyc ADD COLUMN signed_phone TEXT",
+]) { try { db.exec(stmt); } catch (e) {} }
 
 const _tpl = db.prepare('INSERT OR IGNORE INTO order_templates (key,type,status,label,subject,body) VALUES (?,?,?,?,?,?)');
 for (const [ty, st, lb, su, bo] of [

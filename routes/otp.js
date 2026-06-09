@@ -176,6 +176,18 @@ router.post('/firebase', async (req, res) => {
   }
 });
 
+// Verify a raw OTP for a phone (consumes it on success). Used by operator e-sign.
+function verifyCode(phoneRaw, codeRaw) {
+  const phone = norm(phoneRaw); const code = String(codeRaw || '').trim();
+  if (STATIC_OTP && !twoFactorOn() && code === STATIC_OTP) { codes.delete(phone); return true; }
+  const rec = codes.get(phone);
+  if (!rec) return false;
+  if (Date.now() > rec.expires) { codes.delete(phone); return false; }
+  if (rec.attempts >= 5) { codes.delete(phone); return false; }
+  if (rec.code !== code) { rec.attempts++; return false; }
+  codes.delete(phone); return true;
+}
+
 // used by the orders route to enforce verification before creating a booking
 function verifyBooking(token, phone) {
   const t = tokens.get(token);
@@ -191,4 +203,4 @@ function phoneForToken(token) {
   return t.phone;
 }
 
-module.exports = { router, verifyBooking, phoneForToken };
+module.exports = { router, verifyBooking, phoneForToken, verifyCode };

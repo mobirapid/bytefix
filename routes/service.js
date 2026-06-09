@@ -1,9 +1,11 @@
 // Service Requests: configurable statuses, operator order management,
 // discussion comments + attachments, and ratings/reviews.
 const express = require('express');
+const crypto = require('crypto');
 const db = require('../db');
 const { requireAdmin, requirePerm, userFromToken, permsOf, rolesOf } = require('./auth');
 const { notify } = require('./notify');
+const { verifyCode } = require('./otp');
 const router = express.Router();
 
 const COLORS = ['red', 'orange', 'yellow', 'lightgreen', 'darkgreen'];
@@ -184,7 +186,7 @@ router.post('/orders/:ref/reviews', (req, res) => {
 
 /* ---------------- Resale KYC / ownership document ---------------- */
 function kycMeta(ref) {
-  const r = db.prepare('SELECT order_ref,id_type,id_last4,serial,consent,consent_name,consent_at,doc_name,doc_mime,doc_size,updated_at FROM order_kyc WHERE order_ref=?').get(ref);
+  const r = db.prepare('SELECT order_ref,id_type,id_last4,serial,consent,consent_name,consent_at,consent_method,sign_ref,signed_phone,doc_name,doc_mime,doc_size,updated_at FROM order_kyc WHERE order_ref=?').get(ref);
   return r ? { ...r, has_doc: !!r.doc_name } : null;
 }
 function kycGuard(req, res) {
@@ -229,6 +231,40 @@ router.put('/orders/:ref/kyc', requirePerm('service_requests'), (req, res) => {
   }
   res.json(kycMeta(o.ref));
 });
+// Send an OTP to the seller's phone for e-signing the consent.
+router.post('/orders/:ref/kyc/send-otp', requirePerm('service_requests'), async (req, res) => {
+  const o = kycGuard(req, res); if (!o) return;
+  const phone = (o.customer_phone || '').replace(/\D/g, '');
+  if (phone.length < 10) return res.status(400).json({ error: 'No valid phone on this order.' });
+  // reuse the public OTP send flow internally
+  try {
+    const r = await fetch('http://127.0.0.1:' + (process.env.PORT || 3000) + '/api/otp/send', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) return res.status(r.status).json(d);
+    res.json({ sent: true, phone_last4: phone.slice(-4), dev_code: d.dev_code });
+  } catch (e) { res.status(502).json({ error: 'Could not send the OTP.' }); }
+});
+
+// Verify the seller's OTP and record it as a digital signature on the consent.
+router.post('/orders/:ref/kyc/sign', requirePerm('service_requests'), (req, res) => {
+  const o = kycGuard(req, res); if (!o) return;
+  const phone = o.customer_phone || '';
+  if (!verifyCode(phone, req.body.code)) return res.status(400).json({ error: 'Incorrect or expired OTP.' });
+  const signRef = 'ESIGN-' + crypto.randomBytes(4).toString('hex').toUpperCase();
+  const at = new Date().toISOString();
+  const existing = db.prepare('SELECT order_ref FROM order_kyc WHERE order_ref=?').get(o.ref);
+  if (existing) {
+    db.prepare("UPDATE order_kyc SET consent=1, consent_method='otp', consent_at=?, sign_ref=?, signed_phone=?, by_user=?, ip=?, updated_at=datetime('now') WHERE order_ref=?")
+      .run(at, signRef, phone, req.user.id, req.ip || '', o.ref);
+  } else {
+    db.prepare("INSERT INTO order_kyc (order_ref,consent,consent_method,consent_at,sign_ref,signed_phone,by_user,ip) VALUES (?,1,'otp',?,?,?,?,?)")
+      .run(o.ref, at, signRef, phone, req.user.id, req.ip || '');
+  }
+  res.json(kycMeta(o.ref));
+});
+
 // Stream the stored ID document — operators only (NOT public).
 router.get('/orders/:ref/kyc/doc', requirePerm('service_requests'), (req, res) => {
   if (!kycGuard(req, res)) return;
