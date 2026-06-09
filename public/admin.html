@@ -12,7 +12,7 @@
 <script>
 const API='/api';
 let TOKEN=localStorage.getItem('regear_token')||'';
-let tab='overview', adminCat=null, adminModel=null, data={}, commsTab='repair', commsStatus=null, accessQ='', accessTimer=null;
+let tab='overview', adminCat=null, adminModel=null, data={}, commsTab='repair', commsStatus=null, accessQ='', accessTimer=null, showCities=false;
 const INR=n=>'₹'+Number(Math.round(n||0)).toLocaleString('en-IN');
 const esc=s=>String(s==null?'':s).replace(/"/g,'&quot;').replace(/</g,'&lt;');
 const catIco=x=>(x&&(x.emoji||'').startsWith('data:'))?'<img src="'+x.emoji+'" alt="" style="height:16px;width:auto;vertical-align:-3px;border-radius:3px">':((x&&x.emoji)||'');
@@ -127,10 +127,30 @@ function overviewView(){
 }
 
 /* ---------- CATALOG ---------- */
+function cityList(){const raw=(data.settings&&data.settings.cities)||'';const a=raw.split(/[\n,]+/).map(x=>x.trim()).filter(Boolean);return a.length?a:['Bengaluru','Mumbai','Delhi'];}
+function findCatItem(level,id){for(const c of (data.catalog||[])){if(level==='category'&&c.id===id)return c;for(const b of c.brands){if(level==='brand'&&b.id===id)return b;for(const m of b.models){if(level==='model'&&m.id===id)return m;}}}return null;}
+async function toggleItemCity(level,id,flow,city){const item=findCatItem(level,id);if(!item)return;
+  let arr=((flow==='repair'?item.repair_cities:item.sell_cities)||[]).slice();
+  const i=arr.indexOf(city); if(i>=0)arr.splice(i,1); else arr.push(city);
+  try{await api('/item-cities',{method:'PUT',body:JSON.stringify({level,item_id:id,flow,cities:arr})});
+    if(flow==='repair')item.repair_cities=arr; else item.sell_cities=arr; render(catalogView());}
+  catch(e){flash(e.message);}}
+function cityBlock(level,item){if(!showCities)return '';
+  const row=(flow,lbl)=>`<div class="cityrow"><span class="citylbl">${lbl}</span>${cityList().map(c=>{const on=((flow==='repair'?item.repair_cities:item.sell_cities)||[]).includes(c);return `<button class="citychip ${on?'on':''}" onclick="toggleItemCity('${level}',${item.id},'${flow}','${c.replace(/'/g,"\\'")}')">${esc(c)}</button>`;}).join('')}</div>`;
+  return `<div class="citywrap">${row('repair','Repair')}${row('sell','Resale')}</div>`;
+}
 function catalogView(){
   const c=data.catalog.find(x=>x.id===adminCat)||data.catalog[0];
+  const cityOn=(data.settings&&data.settings.city_catalog)==='1';
   const prev=(c&&(c.emoji||'').startsWith('data:'))?`<img src="${c.emoji}" alt="" style="height:30px;width:auto">`:(c?(c.emoji||'📦'):'📦');
   return `<p class="lead">Add device types, brands, and models. Models carry a base resale value; repair pricing lives under <b>Repair pricing</b>.</p>
+  <div class="card sec" style="display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap">
+    <div><b>City-wise catalogue</b><p class="hint">When ON, the storefront only shows an item in a city if it's ticked for that city (per Repair/Resale). When OFF, city is ignored. Configure cities below, then turn this on.</p></div>
+    <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+      <label class="appchk"><input type="checkbox" ${showCities?'checked':''} onchange="showCities=this.checked;render(catalogView())"> Show city editors</label>
+      <label class="swt"><input type="checkbox" ${cityOn?'checked':''} onchange="data.settings.city_catalog=this.checked?'1':'0';saveSetting('city_catalog',data.settings.city_catalog);render(catalogView())"><span>${cityOn?'On':'Off'}</span></label>
+    </div>
+  </div>
   <div class="catpick">${data.catalog.map(x=>`<div class="c ${x.id===adminCat?'on':''}" onclick="adminCat=${x.id};render(catalogView())">${catIco(x)} ${esc(x.name)}</div>`).join('')}</div>
   ${c?`<div class="card" style="padding:14px 16px;margin-bottom:14px"><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
     <div style="width:46px;height:46px;border-radius:11px;background:#fff;border:1px solid var(--line);display:grid;place-items:center;font-size:24px;overflow:hidden">${prev}</div>
@@ -144,7 +164,7 @@ function catalogView(){
     <span style="font-size:12px;color:var(--ink-soft);font-weight:700">Available for</span>
     <label class="appchk"><input type="checkbox" ${c.for_repair?'checked':''} onchange="updCategory(${c.id},'for_repair',this.checked?1:0)"> Repair</label>
     <label class="appchk"><input type="checkbox" ${c.for_sell?'checked':''} onchange="updCategory(${c.id},'for_sell',this.checked?1:0)"> Resale</label>
-  </div></div>`:''}
+  </div>${cityBlock('category',c)}</div>`:''}
   <div class="addbar card" style="border-radius:12px">
     <input id="nc_emoji" placeholder="📦" style="max-width:60px;flex:0 0 auto">
     <input id="nc_name" placeholder="New category name">
@@ -157,13 +177,14 @@ function catalogView(){
       <label class="appchk" style="margin-left:auto" title="Available for Repair"><input type="checkbox" ${b.for_repair?'checked':''} onchange="updBrand(${b.id},'for_repair',this.checked?1:0)"> Repair</label>
       <label class="appchk" title="Available for Resale"><input type="checkbox" ${b.for_sell?'checked':''} onchange="updBrand(${b.id},'for_sell',this.checked?1:0)"> Resale</label>
       <button class="del" style="margin-left:10px" onclick="delBrand(${b.id})">×</button></div>
+    ${cityBlock('brand',b)}
     ${b.models.map(m=>`<div class="modrow">
       <input class="flat nm" value="${esc(m.name)}" onchange="updModel(${m.id},'name',this.value)">
       <span style="font-size:11px;color:var(--ink-soft)">base ₹</span>
       <input class="num" type="number" value="${m.base_value}" onchange="updModel(${m.id},'base_value',+this.value)">
       <label class="appchk" title="Available for Repair"><input type="checkbox" ${m.for_repair?'checked':''} onchange="updModel(${m.id},'for_repair',this.checked?1:0)"> R</label>
       <label class="appchk" title="Available for Resale"><input type="checkbox" ${m.for_sell?'checked':''} onchange="updModel(${m.id},'for_sell',this.checked?1:0)"> S</label>
-      <button class="del" onclick="delModel(${m.id})">×</button></div>`).join('')}
+      <button class="del" onclick="delModel(${m.id})">×</button></div>${cityBlock('model',m)}`).join('')}
     <div class="addbar"><input id="nm_name_${b.id}" placeholder="New model"><input id="nm_base_${b.id}" class="num" type="number" placeholder="base ₹"><button class="btn sm" onclick="addModel(${b.id})">＋ Model</button></div>
   </div>`).join('')}
   <div class="addbar card" style="border-radius:12px"><input id="nb_name" placeholder="New brand for ${esc(c.name)}"><button class="btn sm" onclick="addBrand(${c.id})">＋ Brand</button></div>`:''}`;

@@ -205,3 +205,11 @@ textarea.fw{font-family:inherit;resize:vertical}
 .badge2.yellow{background:#FBF4D9;color:#8A6D00}
 .badge2.lightgreen{background:#E7F4EA;color:#2E7D32}
 .badge2.darkgreen{background:#DCEFE1;color:#15592B}
+
+/* City-wise availability editors (catalog) */
+.citywrap{margin-top:var(--s2);padding-top:var(--s2);border-top:1px dashed var(--line);display:flex;flex-direction:column;gap:6px}
+.cityrow{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
+.citylbl{font-size:11px;font-weight:700;color:var(--ink-soft);min-width:52px;text-transform:uppercase;letter-spacing:.03em}
+.citychip{font-size:12px;border:1px solid var(--line);background:var(--card);color:var(--ink-soft);border-radius:999px;padding:3px 10px;cursor:pointer;transition:.12s}
+.citychip:hover{border-color:var(--green-bright)}
+.citychip.on{background:var(--green);color:#fff;border-color:var(--green)}

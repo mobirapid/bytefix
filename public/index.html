@@ -319,7 +319,7 @@ function howHTML(){const steps=[['01','📝','Tell us about it','Pick your devic
   <div class="steps">${steps.map((s,i)=>`<div class="step"><span class="n">Step - ${i+1}</span><div class="e">${s[1]}</div><h3>${s[2]}</h3><p>${s[3]}</p></div>`).join('')}</div></div></section>`;}
 
 function catsHTML(){return `<section class="block" id="cats" style="background:var(--paper-2)"><div class="container"><div class="kicker">What we handle</div><h2>Every gadget, covered.</h2><p class="lead">Tap a device to fix it or get an instant resale quote.</p>
-  <div class="cat-grid">${CATALOG.filter(c=>c.for_repair||c.for_sell).map(c=>`<div class="cat-card" onclick="startCat(${c.id})"><span class="e">${catEmoji(c)}</span><b>${esc(c.name)}</b><span>${c.brands.reduce((s,b)=>s+b.models.length,0)} models</span></div>`).join('')}</div></div></section>`;}
+  <div class="cat-grid">${CATALOG.filter(catAvailable).map(c=>`<div class="cat-card" onclick="startCat(${c.id})"><span class="e">${catEmoji(c)}</span><b>${esc(c.name)}</b><span>${c.brands.reduce((s,b)=>s+b.models.length,0)} models</span></div>`).join('')}</div></div></section>`;}
 
 function featHTML(){const f=[['🏠','Doorstep everything','Repairs and pickups at your home or office, at a slot you choose.'],['💸','Best price, instantly','Fair, transparent quotes with no lowball surprises at the door.'],['🛡️','12-month warranty','Every repair is backed by a year-long warranty on parts and labour.'],['🔒','Data wiped securely','Certified data erasure on every device you sell — done in front of you.'],['⚡','Same-day service','Most phone repairs in 30 minutes; same-day pickup slots available.'],['✅','Genuine parts','Quality-checked components and trained, verified technicians.']];
   return `<section class="block"><div class="container"><div class="kicker">Why ReGear</div><h2>Built on trust.</h2>
@@ -419,17 +419,21 @@ async function renderFlow(){
 }
 function prog(n){let s='';for(let i=0;i<5;i++)s+=`<i class="${i<n?'on':''}"></i>`;return `<div class="prog">${s}</div>`;}
 
-function choosePurpose(){const c=cat(S.cat);const canFix=!!c.for_repair,canSell=!!c.for_sell;
+function choosePurpose(){const c=cat(S.cat);const canFix=flowOK(c,'fix'),canSell=flowOK(c,'sell');
   const fixRow=`<div class="row" onclick="S.mode='fix';S.issues=[];nav(pickBrand)"><span class="em">🛠️</span><div class="meta"><b>Repair it</b><span>Book a repair with a transparent quote</span></div><span class="chev">→</span></div>`;
   const sellRow=`<div class="row" onclick="S.mode='sell';S.answers={};S.qi=0;nav(pickBrand)"><span class="em">💸</span><div class="meta"><b>Sell it</b><span>Get an instant price and free pickup</span></div><span class="chev">→</span></div>`;
   return `<div class="eyebrow">${esc(c.name)}</div><div class="step-h">${canFix&&canSell?'Fix it or sell it?':(canFix?'Repair your device':'Sell your device')}</div><p class="fsub">What would you like to do with your ${esc(c.name.toLowerCase())}?</p>
   <div class="list">${canFix?fixRow:''}${canSell?sellRow:''}${!canFix&&!canSell?`<div class="muted-card">This device type isn't available right now.</div>`:''}</div>`;}
-function catsForFlow(mode){return CATALOG.filter(c=>mode==='fix'?c.for_repair:c.for_sell);}
+function curCity(){return CITY||SET.city||'Bengaluru';}
+function inCity(item,mode){if(SET.city_catalog!=='1')return true;const list=(mode==='fix'?item.repair_cities:item.sell_cities)||[];return list.includes(curCity());}
+function flowOK(item,mode){return (mode==='fix'?item.for_repair:item.for_sell)&&inCity(item,mode);}
+function catAvailable(c){return flowOK(c,'fix')||flowOK(c,'sell');}
+function catsForFlow(mode){return CATALOG.filter(c=>flowOK(c,mode));}
 function pickCat(){const list=catsForFlow(S.mode);return prog(1)+`<div class="eyebrow">${S.mode==='fix'?'Repair':'Sell'} · Step 1</div><div class="step-h">What kind of device?</div>
   ${list.length?`<div class="grid2">${list.map(c=>`<div class="tile" onclick="S.cat=${c.id};nav(pickBrand)"><span class="em">${catEmoji(c)}</span>${esc(c.name)}</div>`).join('')}</div>`:`<div class="muted-card">No device types are available for ${S.mode==='fix'?'repair':'resale'} right now.</div>`}`;}
-function pickBrand(){const c=cat(S.cat);const brands=c.brands.filter(b=>S.mode==='fix'?b.for_repair:b.for_sell);return prog(2)+`<div class="eyebrow">${esc(c.name)}</div><div class="step-h">Pick the brand</div>
+function pickBrand(){const c=cat(S.cat);const brands=c.brands.filter(b=>flowOK(b,S.mode));return prog(2)+`<div class="eyebrow">${esc(c.name)}</div><div class="step-h">Pick the brand</div>
   ${brands.length?`<div class="grid2">${brands.map(b=>`<div class="tile brand" onclick="S.brand=${b.id};nav(pickModel)">${esc(b.name)}</div>`).join('')}</div>`:`<div class="muted-card">No brands are available for ${S.mode==='fix'?'repair':'resale'} in this category yet.</div>`}`;}
-function pickModel(){const c=cat(S.cat);const b=c.brands.find(x=>x.id===S.brand);const models=b.models.filter(m=>S.mode==='fix'?m.for_repair:m.for_sell);return prog(3)+`<div class="eyebrow">${esc(b.name)} ${esc(c.name)}</div><div class="step-h">Which model?</div>
+function pickModel(){const c=cat(S.cat);const b=c.brands.find(x=>x.id===S.brand);const models=b.models.filter(m=>flowOK(m,S.mode));return prog(3)+`<div class="eyebrow">${esc(b.name)} ${esc(c.name)}</div><div class="step-h">Which model?</div>
   ${models.length?`<div class="list">${models.map(m=>`<div class="row" onclick="S.model=${m.id};S.modelName='${m.name.replace(/'/g,'')}';S.base=${m.base_value};nav(${S.mode==='fix'?'pickIssues':'condition'})"><span class="em">${catEmoji(c)}</span><div class="meta"><b>${esc(m.name)}</b><span>${S.mode==='sell'?'Up to '+INR(m.base_value):'Tap to select issues'}</span></div><span class="chev">→</span></div>`).join('')}</div>`:`<div class="muted-card">No models are available for ${S.mode==='fix'?'repair':'resale'} under this brand yet.</div>`}`;}
 function devStrip(){const c=cat(S.cat);const b=c.brands.find(x=>x.id===S.brand);return `<div class="selected-device"><span class="em">${catEmoji(c)}</span><div><b>${esc(b.name)} ${esc(S.modelName)}</b><span>${esc(c.name)}</span></div><span class="edit" onclick="while(stack[stack.length-1]!==pickModel&&stack.length>1)stack.pop();renderFlow()">change</span></div>`;}
 

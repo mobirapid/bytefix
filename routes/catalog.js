@@ -6,18 +6,46 @@ const router = express.Router();
 /* ---------------- PUBLIC READ ---------------- */
 
 // Full catalog tree (categories -> brands -> models). Powers the customer app.
+// Each node also carries repair_cities[] and sell_cities[] (city-wise availability).
 router.get('/catalog', (req, res) => {
   const cats = db.prepare('SELECT * FROM categories WHERE active=1 ORDER BY sort, id').all();
   const brandsByCat = db.prepare('SELECT * FROM brands ORDER BY sort, name').all();
   const models = db.prepare('SELECT * FROM models WHERE active=1 ORDER BY base_value DESC').all();
+  const cityRows = db.prepare('SELECT level,item_id,flow,city FROM item_cities').all();
+  const cityMap = {}; // level:id -> { repair:[], sell:[] }
+  for (const r of cityRows) {
+    const k = r.level + ':' + r.item_id;
+    (cityMap[k] || (cityMap[k] = { repair: [], sell: [] }))[r.flow]?.push(r.city);
+  }
+  const withCities = (level, o) => {
+    const c = cityMap[level + ':' + o.id] || { repair: [], sell: [] };
+    return { ...o, repair_cities: c.repair, sell_cities: c.sell };
+  };
   const tree = cats.map(c => ({
-    ...c,
+    ...withCities('category', c),
     brands: brandsByCat.filter(b => b.category_id === c.id).map(b => ({
-      ...b,
-      models: models.filter(m => m.brand_id === b.id),
+      ...withCities('brand', b),
+      models: models.filter(m => m.brand_id === b.id).map(m => withCities('model', m)),
     })),
   }));
   res.json(tree);
+});
+
+// Set the cities an item is available in, for a flow. Replaces the list. (admin)
+// Body: { level:'category'|'brand'|'model', item_id, flow:'repair'|'sell', cities:[...] }
+router.put('/item-cities', requireAdmin, (req, res) => {
+  const { level, item_id, flow } = req.body || {};
+  if (!['category', 'brand', 'model'].includes(level)) return res.status(400).json({ error: 'bad level' });
+  if (!['repair', 'sell'].includes(flow)) return res.status(400).json({ error: 'bad flow' });
+  const id = Number(item_id);
+  if (!id) return res.status(400).json({ error: 'bad item_id' });
+  const cities = Array.isArray(req.body.cities) ? [...new Set(req.body.cities.map(c => String(c).trim()).filter(Boolean))] : [];
+  db.tx(() => {
+    db.prepare('DELETE FROM item_cities WHERE level=? AND item_id=? AND flow=?').run(level, id, flow);
+    const ins = db.prepare('INSERT OR IGNORE INTO item_cities (level,item_id,flow,city) VALUES (?,?,?,?)');
+    cities.forEach(c => ins.run(level, id, flow, c));
+  });
+  res.json({ ok: true, level, item_id: id, flow, cities });
 });
 
 router.get('/categories', (req, res) =>

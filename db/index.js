@@ -160,6 +160,17 @@ CREATE TABLE IF NOT EXISTS order_reviews (
   UNIQUE(order_ref, role)
 );
 `);
+// City-wise availability: a row = item (category/brand/model) is available in `city`
+// for `flow` (repair/sell). Explicit opt-in — no rows means not available there.
+db.exec(`CREATE TABLE IF NOT EXISTS item_cities (
+  level TEXT NOT NULL,        -- 'category' | 'brand' | 'model'
+  item_id INTEGER NOT NULL,
+  flow TEXT NOT NULL,         -- 'repair' | 'sell'
+  city TEXT NOT NULL,
+  UNIQUE(level, item_id, flow, city)
+);
+CREATE INDEX IF NOT EXISTS idx_item_cities ON item_cities(level, flow, city);`);
+
 const _tpl = db.prepare('INSERT OR IGNORE INTO order_templates (key,type,status,label,subject,body) VALUES (?,?,?,?,?,?)');
 for (const [ty, st, lb, su, bo] of [
   ['repair','placed','Booking confirmed','Your repair is booked · {ref}','Hi {name}, your {device} repair is booked. We will keep you posted at every step. Reference: {ref}.'],
