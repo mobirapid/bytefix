@@ -186,7 +186,7 @@ async function showProfile(){if(!SESSION){enterFlow(loginPhone);return;}mode='pa
       <div class="form-grid">
         <div class="field" style="margin-top:0"><label>Full name</label><input id="p_name" value="${esc(u.name||'')}"></div>
         <div class="field" style="margin-top:0"><label>Email</label><input id="p_email" type="email" value="${esc(u.email||'')}"></div>
-        <div class="field" style="margin-top:0"><label>Mobile</label>${u.phone?`<input value="${esc(u.phone)}" disabled>`:`<button class="locbtn" style="margin:0" onclick="enterFlow(addPhone)"><span>＋</span> Add your mobile number</button>`}</div>
+        <div class="field" style="margin-top:0"><label>Mobile</label>${u.phone?`<div class="ccrow"><input value="${esc(u.phone)}" disabled><button class="locbtn" style="margin:0;white-space:nowrap" onclick="enterFlow(addPhone)"><span>↻</span> Change</button></div>`:`<button class="locbtn" style="margin:0" onclick="enterFlow(addPhone)"><span>＋</span> Add your mobile number</button>`}</div>
         <div class="field" style="margin-top:0"><label>Preferred city</label><input id="p_city" value="${esc(u.city||CITY||'')}"></div>
       </div>
       <label class="prefrow" style="margin-top:14px"><input type="checkbox" id="p_eu" ${u.email_updates?'checked':''}> Email me updates about my orders</label>
@@ -245,15 +245,16 @@ async function renderMyOrders(){const el=document.getElementById('heroRight');if
   el.innerHTML=`<div class="hero-orders"><div class="ho-head"><b>Welcome back, ${esc(first(ME.name))}</b><span onclick="showProfile()">${orders.length>3?`All (${orders.length})`:'Account'}</span></div><div class="ho-sub">Your recent orders</div>${cards}</div>`;
 }
 /* add a verified mobile to a (e.g. Google) account */
-function addPhone(){return `<div class="step-h">Add your mobile</div><p class="fsub">Verify your number so your bookings appear in your account.</p>
-  <div class="field"><label>Mobile number</label><div class="ccrow"><select id="ap_cc" class="cc">${ccOptions(S.dial)}</select><input id="ap_phone" placeholder="10-digit mobile" inputmode="tel"></div></div>
+function addPhone(){const chg=ME&&ME.phone;return `<div class="step-h">${chg?'Change your mobile':'Add your mobile'}</div><p class="fsub">${chg?'Enter your new number — we\'ll verify it with an OTP, then update your account.':'Verify your number so your bookings appear in your account.'}</p>
+  ${chg?`<div class="muted-card">Current number: <b>${esc(ME.phone)}</b></div>`:''}
+  <div class="field"><label>${chg?'New mobile number':'Mobile number'}</label><div class="ccrow"><select id="ap_cc" class="cc">${ccOptions(S.dial)}</select><input id="ap_phone" placeholder="10-digit mobile" inputmode="tel"></div></div>
   <div class="dock"><button class="btn green" id="apbtn" onclick="addPhoneSend()">Send code →</button></div>`;}
 async function addPhoneSend(){clearErrs();S.dial=val('ap_cc')||'+91';S.phone=val('ap_phone');const d=S.phone.replace(/\D/g,'');if(d.length<(S.dial==='+91'?10:7)){setErr('ap_phone','Enter a valid mobile number');return;}try{const r=await otpSend();S.devCode=r.dev_code||'';nav(addPhoneOtp);}catch(e){alert(e.message);}}
 function addPhoneOtp(){return `<div class="step-h">Enter your code</div><p class="fsub">Sent to <b>${esc(S.phone)}</b>.</p>${S.devCode?`<div class="muted-card" style="color:var(--green)">Demo code: <b style="font-family:'JetBrains Mono'">${S.devCode}</b></div>`:''}
   <div class="field"><label>One-time code</label><input id="ap_code" inputmode="numeric" maxlength="6" placeholder="––––––" style="letter-spacing:8px;text-align:center;font-family:'JetBrains Mono';font-size:22px"></div>
   <div class="dock"><button class="btn green" id="apvbtn" onclick="addPhoneVerify()">Verify →</button><button class="btn btn-ghost" onclick="addPhoneSend()">Resend code</button></div>`;}
 async function addPhoneVerify(){const code=val('ap_code');if(code.length<4)return alert('Enter the code');const btn=document.getElementById('apvbtn');btn.textContent='Verifying…';btn.disabled=true;
-  try{const r=await otpVerify(code);const m=await aapi('/account/attach-phone',{method:'POST',body:JSON.stringify({booking_token:r.token})});ME=m.user;syncAuth();toast('Mobile added');showProfile();}
+  const had=ME&&ME.phone;try{const r=await otpVerify(code);const m=await aapi('/account/attach-phone',{method:'POST',body:JSON.stringify({booking_token:r.token})});ME=m.user;syncAuth();toast(had?'Number updated':'Mobile added');showProfile();}
   catch(e){btn.disabled=false;btn.textContent='Verify →';alert(e.message);}}
 async function api(p,o={}){const r=await fetch(API+p,{headers:{'Content-Type':'application/json'},...o});if(!r.ok)throw new Error((await r.json().catch(()=>({}))).error||'Error');return r.json();}
 const cat=id=>CATALOG.find(c=>c.id===id);
