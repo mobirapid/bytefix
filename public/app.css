@@ -396,3 +396,12 @@ html,body{max-width:100%;overflow-x:hidden}   /* safety net against horizontal s
 .biz-stats b{display:block;font-family:'Bricolage Grotesque';font-size:30px;color:#86b7ec;line-height:1}
 .biz-stats span{font-size:12.5px;color:rgba(255,255,255,.72);font-weight:600;margin-top:4px;display:block}
 @media(max-width:760px){.bizband{grid-template-columns:1fr;padding:32px 22px}.biz-h{font-size:30px}.biz-stats{grid-template-columns:repeat(3,1fr)}.biz-stats b{font-size:22px}}
+
+/* B2B verify rows */
+.vrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.vrow input{flex:1;min-width:150px}
+.vbtn{padding:9px 15px;white-space:nowrap;font-size:13.5px}
+.vok{color:#2E7D32;font-weight:700;font-size:13px;white-space:nowrap}
+.vlink{background:none;border:none;color:var(--green-bright);font-size:12.5px;font-weight:600;cursor:pointer;margin-top:5px;padding:0}
+.verr{color:#C0392B;font-size:12px;margin-top:5px}
+.vhint{font-size:12px;color:var(--ink-soft);white-space:nowrap}

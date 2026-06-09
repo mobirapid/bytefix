@@ -71,6 +71,8 @@ app.use(express.static(path.join(__dirname, 'public'), {
   },
 }));
 app.get('/admin', (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
+// Dedicated landing URLs (e.g. for ad campaigns) — all served by the storefront SPA.
+app.get(['/business', '/for-business'], (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {

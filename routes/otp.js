@@ -1,6 +1,7 @@
 const express = require('express');
 const crypto = require('crypto');
 const db = require('../db');
+const { sendEmail } = require('./mailer');
 const router = express.Router();
 
 // In-memory stores — fine for OTPs/tokens since they're short-lived and ephemeral.
@@ -188,6 +189,40 @@ function verifyCode(phoneRaw, codeRaw) {
   codes.delete(phone); return true;
 }
 
+// ---- Email OTP (used by the B2B form to verify a work email) ----
+const emailCodes = new Map();   // email -> { code, expires, attempts, lastSent }
+const emailTokens = new Map();  // token -> { email, expires }
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+router.post('/email/send', (req, res) => {
+  const email = String(req.body.email || '').trim().toLowerCase();
+  if (!EMAIL_RE.test(email)) return res.status(400).json({ error: 'Enter a valid email address' });
+  const ex = emailCodes.get(email);
+  if (ex && Date.now() - ex.lastSent < 30000) return res.status(429).json({ error: 'Please wait a few seconds before requesting another code' });
+  const code = gen();
+  emailCodes.set(email, { code, expires: Date.now() + 5 * 60000, attempts: 0, lastSent: Date.now() });
+  sendEmail(email, 'Your verification code', `Your verification code is ${code}. It is valid for 5 minutes.`);
+  res.json({ sent: true, ...(DEV ? { dev_code: code } : {}) });
+});
+router.post('/email/verify', (req, res) => {
+  const email = String(req.body.email || '').trim().toLowerCase();
+  const code = String(req.body.code || '').trim();
+  const rec = emailCodes.get(email);
+  if (!rec) return res.status(400).json({ error: 'Request a code first' });
+  if (Date.now() > rec.expires) { emailCodes.delete(email); return res.status(400).json({ error: 'Code expired — request a new one' }); }
+  if (rec.attempts >= 5) { emailCodes.delete(email); return res.status(429).json({ error: 'Too many attempts — request a new code' }); }
+  if (rec.code !== code) { rec.attempts++; return res.status(400).json({ error: 'Incorrect code' }); }
+  emailCodes.delete(email);
+  const token = crypto.randomBytes(16).toString('hex');
+  emailTokens.set(token, { email, expires: Date.now() + 15 * 60000 });
+  res.json({ verified: true, token });
+});
+function verifyEmailToken(token, email) {
+  const t = emailTokens.get(token);
+  if (!t) return false;
+  if (Date.now() > t.expires) { emailTokens.delete(token); return false; }
+  return t.email === String(email || '').trim().toLowerCase();
+}
+
 // used by the orders route to enforce verification before creating a booking
 function verifyBooking(token, phone) {
   const t = tokens.get(token);
@@ -203,4 +238,4 @@ function phoneForToken(token) {
   return t.phone;
 }
 
-module.exports = { router, verifyBooking, phoneForToken, verifyCode };
+module.exports = { router, verifyBooking, phoneForToken, verifyCode, verifyEmailToken };

@@ -265,6 +265,7 @@ async function boot(){
   try{[CATALOG,CONDITIONS,SET,STAT]=await Promise.all([api('/catalog'),api('/conditions'),api('/settings'),api('/service/order-statuses')]);}
   catch(e){document.getElementById('view').innerHTML='<div class="flowwrap center">Could not reach server. Run <b>npm start</b>.</div>';return;}
   applyBranding();showHome();
+  if(/^\/(business|for-business)\/?$/i.test(location.pathname)){corpIntent='sell';showCorporate();}
 }
 function applyBranding(){
   const bn=SET.brand_name||'ReGear';
@@ -392,8 +393,19 @@ function corpBandHTML(){return `<section class="block" id="business"><div class=
 </div></div></section>`;}
 
 function showCorporate(){mode='page';stack=[];syncHeader();const v=document.getElementById('view');v.innerHTML=corporateHTML()+footerHTML();window.scrollTo({top:0});}
-function setCorpIntent(i){corpIntent=i;const keep={};['c_company','c_name','c_email','c_phone','c_qty','c_types','c_msg'].forEach(id=>{const el=document.getElementById(id);if(el)keep[id]=el.value;});showCorporate();Object.entries(keep).forEach(([id,v])=>{const el=document.getElementById(id);if(el)el.value=v;});}
+const FREE_EMAIL=['gmail.com','googlemail.com','yahoo.com','yahoo.in','yahoo.co.in','outlook.com','hotmail.com','live.com','msn.com','icloud.com','me.com','aol.com','proton.me','protonmail.com','rediffmail.com','ymail.com','gmx.com','mail.com'];
+function emailDomain(e){return (String(e).split('@')[1]||'').toLowerCase();}
+function isWorkEmail(e){return EMAIL_RE.test(e)&&!FREE_EMAIL.includes(emailDomain(e));}
+function workEmailReason(e){return EMAIL_RE.test(e)?'Please use your company (work) email — personal addresses like Gmail/Yahoo aren’t accepted.':'Enter a valid work email address.';}
+function corpCapture(){S.corp=S.corp||{};const g=id=>{const e=document.getElementById(id);return e?e.value:undefined;};['company','name','email','phone','qty','types','msg'].forEach(k=>{const v=g('c_'+k);if(v!==undefined)S.corp[k]=v;});const cc=g('c_cc');if(cc!==undefined)S.corp.cc=cc;}
+function corpEdit(kind){S.corp=S.corp||{};S.corp[kind+'V']=false;S.corp[kind+'Token']=null;S.corp[kind+'Otp']=false;S.corp[kind+'Msg']='';showCorporate();}
+function setCorpIntent(i){corpCapture();corpIntent=i;showCorporate();}
+async function corpSendEmail(){corpCapture();const email=(S.corp.email||'').trim();if(!isWorkEmail(email)){S.corp.emailMsg=workEmailReason(email);showCorporate();return;}S.corp.emailMsg='';try{const r=await api('/otp/email/send',{method:'POST',body:JSON.stringify({email})});S.corp.emailOtp=true;S.corp.emailDev=r.dev_code||'';showCorporate();}catch(e){S.corp.emailMsg=e.message;showCorporate();}}
+async function corpConfirmEmail(){corpCapture();const code=(document.getElementById('c_email_code')||{}).value||'';try{const r=await api('/otp/email/verify',{method:'POST',body:JSON.stringify({email:S.corp.email,code})});S.corp.emailToken=r.token;S.corp.emailV=true;S.corp.emailOtp=false;S.corp.emailMsg='';showCorporate();}catch(e){S.corp.emailMsg=e.message;showCorporate();}}
+async function corpSendPhone(){corpCapture();const digits=(S.corp.phone||'').replace(/\D/g,'');if(digits.length<10){S.corp.phoneMsg='Enter a valid 10-digit number';showCorporate();return;}S.corp.phoneMsg='';try{const r=await api('/otp/send',{method:'POST',body:JSON.stringify({phone:S.corp.phone})});S.corp.phoneOtp=true;S.corp.phoneDev=r.dev_code||'';showCorporate();}catch(e){S.corp.phoneMsg=e.message;showCorporate();}}
+async function corpConfirmPhone(){corpCapture();const code=(document.getElementById('c_phone_code')||{}).value||'';try{const r=await api('/otp/verify',{method:'POST',body:JSON.stringify({phone:S.corp.phone,code})});S.corp.phoneToken=r.token;S.corp.phoneV=true;S.corp.phoneOtp=false;S.corp.phoneMsg='';showCorporate();}catch(e){S.corp.phoneMsg=e.message;showCorporate();}}
 function corporateHTML(){
+  const c=S.corp=S.corp||{};
   const sell=corpIntent==='sell';
   const benefits=sell
     ?[['💼','Asset recovery','Turn retired laptops, phones & tablets into cash with a single pickup.'],['🔒','Certified data wiping','Audited erasure with certificates for your compliance records.'],['🧾','GST invoicing','Proper tax invoices and documentation for your finance team.'],['🚚','Bulk doorstep pickup','Scheduled collection across one or many office locations.']]
@@ -404,31 +416,42 @@ function corporateHTML(){
     <div class="feat-grid" id="corpBenefits" style="margin-top:26px">${benefits.map(x=>`<div class="feat"><div class="e">${x[0]}</div><h3>${x[1]}</h3><p>${x[2]}</p></div>`).join('')}</div>
     <div style="display:flex;justify-content:center;margin-top:40px"><div class="form-card">
       <h3 style="font-family:'Bricolage Grotesque';font-size:22px;margin-bottom:4px">${sell?'Request a bulk sell quote':'Request a procurement quote'}</h3>
-      <p style="color:var(--ink-soft);font-size:13.5px;margin-bottom:18px">Tell us about your requirement — our corporate team replies within one business day.</p>
+      <p style="color:var(--ink-soft);font-size:13.5px;margin-bottom:18px">Tell us about your requirement — our corporate team replies within one business day. We verify your work email &amp; phone to keep enquiries genuine.</p>
       <div class="form-grid">
-        <div class="field full" style="margin-top:0"><label>Company name *</label><input id="c_company" placeholder="Acme Pvt Ltd"></div>
-        <div class="field" style="margin-top:0"><label>Contact person</label><input id="c_name" placeholder="Your name"></div>
-        <div class="field" style="margin-top:0"><label>Work email</label><input id="c_email" placeholder="you@company.com"></div>
-        <div class="field" style="margin-top:0"><label>Phone</label><div class="ccrow"><select id="c_cc" class="cc">${ccOptions()}</select><input id="c_phone" placeholder="Mobile" inputmode="tel"></div></div>
-        <div class="field" style="margin-top:0"><label>Approx. quantity</label><input id="c_qty" type="number" placeholder="e.g. 50"></div>
-        <div class="field full" style="margin-top:0"><label>Device types</label><input id="c_types" placeholder="e.g. laptops, iPhones, monitors"></div>
-        <div class="field full" style="margin-top:0"><label>Message</label><textarea id="c_msg" rows="3" placeholder="Anything else we should know?"></textarea></div>
+        <div class="field full" style="margin-top:0"><label>Company name *</label><input id="c_company" placeholder="Acme Pvt Ltd" value="${esc(c.company||'')}"></div>
+        <div class="field" style="margin-top:0"><label>Contact person</label><input id="c_name" placeholder="Your name" value="${esc(c.name||'')}"></div>
+        <div class="field full" style="margin-top:0"><label>Work email *</label>
+          <div class="vrow"><input id="c_email" type="email" placeholder="you@company.com" value="${esc(c.email||'')}" ${c.emailV?'disabled':''}>
+            ${c.emailV?`<span class="vok">✓ Verified</span>`:`<button type="button" class="btn ghost vbtn" onclick="corpSendEmail()">${c.emailOtp?'Resend':'Verify'}</button>`}</div>
+          ${(c.emailOtp&&!c.emailV)?`<div class="vrow" style="margin-top:6px"><input id="c_email_code" inputmode="numeric" maxlength="6" placeholder="6-digit email code">${c.emailDev?`<span class="vhint">demo ${esc(c.emailDev)}</span>`:''}<button type="button" class="btn green vbtn" onclick="corpConfirmEmail()">Confirm</button></div>`:''}
+          ${c.emailV?`<button type="button" class="vlink" onclick="corpEdit('email')">Change email</button>`:''}
+          ${c.emailMsg?`<div class="verr">${esc(c.emailMsg)}</div>`:''}
+        </div>
+        <div class="field full" style="margin-top:0"><label>Work phone *</label>
+          <div class="vrow"><select id="c_cc" class="cc" ${c.phoneV?'disabled':''}>${ccOptions(c.cc)}</select>
+            <input id="c_phone" placeholder="Mobile" inputmode="tel" value="${esc(c.phone||'')}" ${c.phoneV?'disabled':''}>
+            ${c.phoneV?`<span class="vok">✓ Verified</span>`:`<button type="button" class="btn ghost vbtn" onclick="corpSendPhone()">${c.phoneOtp?'Resend':'Verify'}</button>`}</div>
+          ${(c.phoneOtp&&!c.phoneV)?`<div class="vrow" style="margin-top:6px"><input id="c_phone_code" inputmode="numeric" maxlength="6" placeholder="OTP">${c.phoneDev?`<span class="vhint">demo ${esc(c.phoneDev)}</span>`:''}<button type="button" class="btn green vbtn" onclick="corpConfirmPhone()">Confirm</button></div>`:''}
+          ${c.phoneV?`<button type="button" class="vlink" onclick="corpEdit('phone')">Change phone</button>`:''}
+          ${c.phoneMsg?`<div class="verr">${esc(c.phoneMsg)}</div>`:''}
+        </div>
+        <div class="field" style="margin-top:0"><label>Approx. quantity</label><input id="c_qty" type="number" placeholder="e.g. 50" value="${esc(c.qty||'')}"></div>
+        <div class="field" style="margin-top:0"><label>Device types</label><input id="c_types" placeholder="e.g. laptops, iPhones, monitors" value="${esc(c.types||'')}"></div>
+        <div class="field full" style="margin-top:0"><label>Message</label><textarea id="c_msg" rows="3" placeholder="Anything else we should know?">${esc(c.msg||'')}</textarea></div>
       </div>
       <button class="btn ${sell?'green':'amber'}" id="cbtn2" style="margin-top:18px" onclick="submitCorp()">${sell?'Request sell quote':'Request procurement quote'}</button>
     </div></div>
   </div></section>`;
 }
 async function submitCorp(){
-  clearErrs();
-  const company=val('c_company'),email=val('c_email'),phone=val('c_phone');
-  let ok=true;
-  if(company.length<2){setErr('c_company','Please enter your company name');ok=false;}
-  if(email&&!EMAIL_RE.test(email)){setErr('c_email','Enter a valid email address');ok=false;}
-  if(!email&&!phone){setErr('c_email','Add a work email or phone');setErr('c_phone','Add a work email or phone');ok=false;}
-  if(!ok)return;
+  corpCapture();const c=S.corp;const company=(c.company||'').trim();
+  if(company.length<2){alert('Please enter your company name');return;}
+  if(!c.emailV){c.emailMsg='Verify your work email to continue';showCorporate();return;}
+  if(!c.phoneV){c.phoneMsg='Verify your phone to continue';showCorporate();return;}
   const btn=document.getElementById('cbtn2');btn.textContent='Sending…';btn.disabled=true;
   try{
-    const r=await api('/corporate',{method:'POST',body:JSON.stringify({intent:corpIntent,company,contact_name:(document.getElementById('c_name')||{}).value||'',email,phone,device_types:(document.getElementById('c_types')||{}).value||'',quantity:+((document.getElementById('c_qty')||{}).value)||null,message:(document.getElementById('c_msg')||{}).value||''})});
+    const r=await api('/corporate',{method:'POST',body:JSON.stringify({intent:corpIntent,company,contact_name:c.name||'',email:c.email,phone:c.phone,device_types:c.types||'',quantity:+(c.qty)||null,message:c.msg||'',email_token:c.emailToken,phone_token:c.phoneToken})});
+    S.corp={};
     document.getElementById('view').innerHTML=`<section class="block"><div class="container center"><div class="tick">✓</div><h2>Request received</h2><p class="lead">Thanks — our corporate team will reach out within one business day. Your reference is <b>${r.ref}</b>.</p><button class="cta green" style="margin-top:22px" onclick="showHome()">Back to home</button></div></section>`+footerHTML();
     window.scrollTo({top:0});
   }catch(e){btn.textContent='Try again';btn.disabled=false;alert('Could not send: '+e.message);}
