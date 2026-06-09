@@ -741,16 +741,23 @@ function pickKyc(input){const f=input.files[0];const h=document.getElementById('
   if(!(/^image\//.test(f.type)||f.type==='application/pdf')){h.textContent='Only image or PDF allowed';S.kycFile=null;return;}
   if(f.size>7*1024*1024){h.textContent='File must be 7MB or smaller';S.kycFile=null;return;}
   const r=new FileReader();r.onload=()=>{S.kycFile={name:f.name,mime:f.type,data:r.result};h.textContent=f.name+' ready';};r.readAsDataURL(f);}
-async function saveKyc(ref){const err=document.getElementById('kyc_err');err.textContent='';
-  const body={id_type:val('k_type'),id_number:val('k_idnum'),serial:val('k_serial'),consent:document.getElementById('k_consent').checked?1:0,consent_name:val('k_name')};
+// Persist whatever's currently typed in the KYC card (used by Save, Sign & Generate).
+async function persistKyc(ref){
+  if(!document.getElementById('k_idnum'))return S.kyc; // card not on screen
+  const cb=document.getElementById('k_consent');
+  const body={id_type:val('k_type'),id_number:val('k_idnum'),serial:val('k_serial'),consent_name:val('k_name')};
+  if(cb)body.consent=cb.checked?1:0;
   if(S.kycFile)body.doc=S.kycFile;
-  try{S.kyc=await aapi('/service/orders/'+ref+'/kyc',{method:'PUT',body:JSON.stringify(body)});S.kycFile=null;toast('KYC saved');renderFlow();}
+  S.kyc=await aapi('/service/orders/'+ref+'/kyc',{method:'PUT',body:JSON.stringify(body)});S.kycFile=null;return S.kyc;
+}
+async function saveKyc(ref){const err=document.getElementById('kyc_err');err.textContent='';
+  try{await persistKyc(ref);toast('KYC saved');renderFlow();}
   catch(e){err.textContent=e.message;}}
 async function viewKyc(ref){try{const r=await fetch(API+'/service/orders/'+ref+'/kyc/doc',{headers:{Authorization:'Bearer '+SESSION}});if(!r.ok)throw 0;const blob=await r.blob();window.open(URL.createObjectURL(blob),'_blank');}catch(e){alert('Could not load the document.');}}
 async function kycSendOtp(ref){const h=document.getElementById('kyc_otp_hint');h.textContent='Sending…';try{const r=await aapi('/service/orders/'+ref+'/kyc/send-otp',{method:'POST',body:JSON.stringify({})});h.textContent='OTP sent to ••••'+(r.phone_last4||'')+(r.dev_code?(' (demo code '+r.dev_code+')'):'');}catch(e){h.textContent=e.message;}}
-async function kycSign(ref){const code=val('k_otp');const h=document.getElementById('kyc_otp_hint');if(!code){h.textContent='Enter the OTP the seller received';return;}try{S.kyc=await aapi('/service/orders/'+ref+'/kyc/sign',{method:'POST',body:JSON.stringify({code})});toast('Consent signed via OTP');renderFlow();}catch(e){h.textContent=e.message;}}
+async function kycSign(ref){const code=val('k_otp');const h=document.getElementById('kyc_otp_hint');if(!code){h.textContent='Enter the OTP the seller received';return;}try{await persistKyc(ref);S.kyc=await aapi('/service/orders/'+ref+'/kyc/sign',{method:'POST',body:JSON.stringify({code})});toast('Consent signed via OTP');renderFlow();}catch(e){h.textContent=e.message;}}
 function maskId(type,num){num=String(num||'').trim();if(!num)return '—';if(/aadh/i.test(type||'')){const d=num.replace(/\D/g,'');return d.length>4?('XXXX XXXX '+d.slice(-4)):num;}return num;}
-async function genKycDoc(ref){const o=S.tracked,k=S.kyc||{};const bn=SET.brand_name||'ByteFix';
+async function genKycDoc(ref){try{await persistKyc(ref);}catch(e){}const o=S.tracked,k=S.kyc||{};const bn=SET.brand_name||'ByteFix';
   let docHtml='';
   if(k.has_doc){try{const r=await fetch(API+'/service/orders/'+ref+'/kyc/doc',{headers:{Authorization:'Bearer '+SESSION}});const blob=await r.blob();const url=URL.createObjectURL(blob);docHtml=blob.type.indexOf('pdf')>=0?`<p><a href="${url}" target="_blank">Attached ID document (PDF)</a></p>`:`<img src="${url}" style="max-width:340px;border:1px solid #ccc;border-radius:8px;margin-top:6px">`;}catch(e){}}
   const row=(l,v)=>`<tr><td class="lbl">${l}</td><td>${esc(v||'—')}</td></tr>`;
