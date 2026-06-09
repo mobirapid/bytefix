@@ -38,7 +38,8 @@ router.get('/:ref', (req, res) => {
 // GET /api/orders — admin list (with KYC presence + verification status)
 router.get('/', requireAdmin, (req, res) => {
   res.json(db.prepare(`SELECT o.*,
-      (k.order_ref IS NOT NULL) AS has_kyc, COALESCE(k.verified,0) AS kyc_verified
+      (k.order_ref IS NOT NULL) AS has_kyc, COALESCE(k.verified,0) AS kyc_verified,
+      (k.doc_name IS NOT NULL) AS has_doc
     FROM orders o LEFT JOIN order_kyc k ON k.order_ref=o.ref
     ORDER BY o.id DESC LIMIT 200`).all());
 });

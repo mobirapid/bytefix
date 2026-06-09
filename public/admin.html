@@ -322,11 +322,11 @@ function ordersView(){
   return `<p class="lead">${data.orders.length} order${data.orders.length>1?'s':''} <span class="pill">live</span> · update status to move an order through its pipeline. Customers see this on the tracking page.</p>
   <div class="card">${data.orders.map(o=>`<div class="ordrow">
     <div class="ordtop"><span class="ordref">${o.ref}</span><span class="badge ${o.type}">${o.type}</span><b>${esc(o.device_label||'')}</b><span class="amt">${INR(o.amount)}</span>${statusBadge(o.type,o.status)}</div>
-    <div class="ordmeta">${esc(o.customer_name||'—')} · ${esc(o.customer_phone||'no phone')} · ${esc(o.slot||'')}</div>
+    <div class="ordmeta">${esc(o.customer_name||'—')} · ${esc(o.customer_phone||'no phone')}${o.city?' · '+esc(o.city):''} · ${esc(o.slot||'')}</div>
     ${orderDetails(o)}
     <div class="rowline"><span class="lbl-mini">Status</span>
       <select onchange="setStatus('${o.ref}',this.value)">${flowStatuses(o.type).map(s=>`<option value="${s.key}" ${o.status===s.key?'selected':''}>${esc(s.label)}</option>`).join('')||`<option>${esc(o.status)}</option>`}</select>
-      <button class="btn ghost" style="padding:7px 12px;font-size:13px;margin-left:auto" onclick="genInvoice('${o.ref}')">${o.type==='repair'?'Tax invoice':'Purchase voucher'}</button>${o.type==='sell'?`<button class="btn ghost" style="padding:7px 12px;font-size:13px" onclick="ownershipDoc('${o.ref}')">Purchase document</button>${o.has_kyc?(o.kyc_verified?`<span class="badge2 darkgreen">KYC verified</span><button class="del-btn" onclick="verifyKyc('${o.ref}',0)">Revoke</button>`:`<span class="badge2 orange">KYC pending</span><button class="btn ink" style="padding:7px 12px;font-size:13px" onclick="verifyKyc('${o.ref}',1)">Verify KYC</button>`):''}`:''}</div>
+      <button class="btn ghost" style="padding:7px 12px;font-size:13px;margin-left:auto" onclick="genInvoice('${o.ref}')">${o.type==='repair'?'Tax invoice':'Purchase voucher'}</button>${o.type==='sell'?`<button class="btn ghost" style="padding:7px 12px;font-size:13px" onclick="ownershipDoc('${o.ref}')">Purchase document</button>${o.has_doc?`<button class="btn ghost" style="padding:7px 12px;font-size:13px" onclick="adminViewId('${o.ref}')">View ID</button>`:''}${o.has_kyc?(o.kyc_verified?`<span class="badge2 darkgreen">KYC verified</span><button class="del-btn" onclick="verifyKyc('${o.ref}',0)">Revoke</button>`:`<span class="badge2 orange">KYC pending</span><button class="btn ink" style="padding:7px 12px;font-size:13px" onclick="verifyKyc('${o.ref}',1)">Verify KYC</button>`):''}`:''}</div>
   </div>`).join('')}</div>`;
 }
 function orderDetails(o){
@@ -391,6 +391,12 @@ function genInvoice(ref){
    </body></html>`;
   const w=window.open('','_blank');if(!w){flash('Allow pop-ups to print');return;}w.document.write(html);w.document.close();
 }
+async function adminViewId(ref){try{const r=await fetch(API+'/service/orders/'+ref+'/kyc/doc',{headers:{Authorization:'Bearer '+TOKEN}});if(!r.ok)throw 0;const blob=await r.blob();const url=URL.createObjectURL(blob);const bn=(data.settings&&data.settings.brand_name)||'ByteFix';
+  if(blob.type.indexOf('pdf')>=0){window.open(url,'_blank');return;}
+  const wm='<span>'+esc(bn)+' • VERIFICATION ONLY</span>';
+  const w=window.open('','_blank');if(!w){window.open(url,'_blank');return;}
+  w.document.write(`<!doctype html><title>ID — ${esc(ref)}</title><style>body{margin:0;background:#222;display:grid;place-items:center;min-height:100vh}.idwrap{position:relative;display:inline-block}.idimg{max-width:96vw;max-height:96vh;display:block}.idwm{position:absolute;inset:0;display:flex;flex-direction:column;gap:30px;align-items:center;justify-content:center;transform:rotate(-24deg);pointer-events:none}.idwm span{color:rgba(255,80,60,.55);font-family:Arial;font-weight:800;font-size:22px;white-space:nowrap;letter-spacing:.05em}</style><div class="idwrap"><img class="idimg" src="${url}"><div class="idwm">${wm}${wm}${wm}${wm}${wm}</div></div>`);w.document.close();
+}catch(e){flash('Could not load the ID document.');}}
 async function verifyKyc(ref,on){if(!on&&!confirm('Revoke verification for '+ref+'?'))return;try{await api('/service/orders/'+ref+'/kyc/verify',{method:'POST',body:JSON.stringify({verified:!!on})});data.orders=await api('/orders');flash(on?'KYC verified':'Verification revoked');render(ordersView());}catch(e){flash(e.message);}}
 function maskId(type,num){num=String(num||'').trim();if(!num)return '—';if(/aadh/i.test(type||'')){const d=num.replace(/\D/g,'');return d.length>4?('XXXX XXXX '+d.slice(-4)):num;}return num;}
 async function ownershipDoc(ref){
