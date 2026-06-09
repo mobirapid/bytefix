@@ -42,4 +42,14 @@ router.put('/users/:id/roles', requireAdmin, (req, res) => {
   res.json({ id, roles: rolesOf(id), perms: permsOf(id) });
 });
 
+// DPDP data-deletion requests (superadmin).
+router.get('/deletion-requests', requireAdmin, (req, res) => {
+  res.json(db.prepare('SELECT * FROM deletion_requests ORDER BY id DESC LIMIT 300').all());
+});
+router.put('/deletion-requests/:id', requireAdmin, (req, res) => {
+  const status = ['open', 'done'].includes(req.body.status) ? req.body.status : 'open';
+  db.prepare('UPDATE deletion_requests SET status=? WHERE id=?').run(status, Number(req.params.id));
+  res.json({ ok: true });
+});
+
 module.exports = router;
