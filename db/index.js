@@ -318,10 +318,14 @@ db.tx = (fn) => { db.exec('BEGIN'); try { const r = fn(); db.exec('COMMIT'); ret
   //    site URL / theme. INSERT OR IGNORE → never overrides anything edited in
   //    Admin → Settings. (A Firebase web apiKey is public by design; security is
   //    enforced by Authorized domains + Firebase rules, not by hiding this key.)
-  setIf.run('firebase_config', '{"apiKey":"AIzaSyBetcYAbS8Zkb3nKbPt66aQ6eVDk4B57bs","authDomain":"bytefix-499bf.firebaseapp.com","projectId":"bytefix-499bf","storageBucket":"bytefix-499bf.firebasestorage.app","messagingSenderId":"1081636331151","appId":"1:1081636331151:web:7a989d4532967927cb5afa","measurementId":"G-J3783ZL3EH"}');
-  setIf.run('otp_email_firebase', '1');
-  setIf.run('site_url', 'https://bytefix.in');
-  setIf.run('theme_color', '#14315C');
+  const FB_CONFIG = '{"apiKey":"AIzaSyBetcYAbS8Zkb3nKbPt66aQ6eVDk4B57bs","authDomain":"bytefix-499bf.firebaseapp.com","projectId":"bytefix-499bf","storageBucket":"bytefix-499bf.firebasestorage.app","messagingSenderId":"1081636331151","appId":"1:1081636331151:web:7a989d4532967927cb5afa","measurementId":"G-J3783ZL3EH"}';
+  // Fill defaults, including the case where a previous blank row exists — but
+  // never clobber a non-empty value the owner has set in Admin → Settings.
+  const setIfEmpty = (k, v) => { setIf.run(k, v); db.prepare('UPDATE settings SET value=? WHERE key=? AND (value IS NULL OR value=?)').run(v, k, ''); };
+  setIfEmpty('firebase_config', FB_CONFIG);
+  setIfEmpty('otp_email_firebase', '1');
+  setIfEmpty('site_url', 'https://bytefix.in');
+  setIfEmpty('theme_color', '#14315C');
 })();
 
 module.exports = db;
