@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex,nofollow" />
 <title>ReGear Admin</title>
 <link rel="stylesheet" href="/admin.css">
 </head>
@@ -534,6 +535,12 @@ function settingsView(){
     <div class="crow"><div class="grow"><div style="font-weight:600">Favicon</div><div style="font-size:12px;color:var(--ink-soft)">The little browser-tab icon.</div></div>${fav}<button class="btn sm ghost" onclick="pickImage('favicon')">Upload</button>${s.favicon?`<button class="btn sm ghost" onclick="removeImage('favicon')">Remove</button>`:''}</div>
     <div class="crow"><div class="grow" style="font-weight:600">Brand name</div><input class="w" style="max-width:260px" value="${esc(s.brand_name||'ReGear')}" onchange="saveSetting('brand_name',this.value)"></div>
     <div class="crow"><div class="grow" style="font-weight:600">Tagline</div><input class="w" style="max-width:320px" value="${esc(s.tagline||'')}" placeholder="Repair or sell your gadgets" onchange="saveSetting('tagline',this.value)"></div>
+    <div class="crow"><div class="grow"><div style="font-weight:600">Share image (Open Graph)</div><div style="font-size:12px;color:var(--ink-soft)">Shown when your links are shared on WhatsApp/social. Paste a full <b>https://</b> image URL (1200×630).</div></div><input class="w" style="max-width:320px;font-family:'JetBrains Mono',monospace;font-size:12px" value="${esc(s.og_image||'')}" placeholder="https://bytefix.in/og.png" onchange="saveSetting('og_image',this.value.trim())"></div>
+    <div class="crow"><div class="grow"><div style="font-weight:600">Theme colour</div><div style="font-size:12px;color:var(--ink-soft)">Browser UI tint on mobile. Hex like #14315C.</div></div><input class="w" style="max-width:140px;font-family:'JetBrains Mono',monospace;font-size:13px" value="${esc(s.theme_color||'')}" placeholder="#14315C" onchange="saveSetting('theme_color',this.value.trim())"></div>
+  </div>
+  <div class="eyebrow">Social links (footer)</div>
+  <div class="card" style="padding:6px 0">
+    ${[['social_instagram','Instagram'],['social_twitter','X / Twitter'],['social_facebook','Facebook'],['social_linkedin','LinkedIn'],['social_youtube','YouTube'],['social_whatsapp','WhatsApp (wa.me link or number)']].map(([k,lbl])=>`<div class="crow"><div class="grow" style="font-weight:600">${lbl}</div><input class="w" style="max-width:340px;font-size:13px" value="${esc(s[k]||'')}" placeholder="https://…" onchange="saveSetting('${k}',this.value.trim())"></div>`).join('')}
   </div>
   <div class="eyebrow">Contact &amp; location</div>
   <div class="card" style="padding:6px 0">
@@ -584,9 +591,34 @@ function settingsView(){
   </div>
   <div class="eyebrow">SEO</div>
   <div class="card" style="padding:14px 16px">
-    <div style="font-weight:600;font-size:13.5px;margin-bottom:7px">Meta description</div>
+    <div style="font-weight:600;font-size:13.5px;margin-bottom:5px">Site URL (canonical base)</div>
+    <input class="w" style="width:100%;font-family:'JetBrains Mono',monospace;font-size:13px" value="${esc(s.site_url||'')}" placeholder="https://bytefix.in" onchange="saveSetting('site_url',this.value.trim().replace(/\\/+$/,''))">
+    <div style="font-size:12px;color:var(--ink-soft);margin:6px 0 14px">Your live domain. Used for canonical tags, sitemap.xml and Open Graph URLs. No trailing slash. Leave blank to auto-detect from the request.</div>
+    <div style="font-weight:600;font-size:13.5px;margin-bottom:7px">Default meta description</div>
     <textarea class="w" rows="3" style="border:1px solid var(--line);border-radius:10px;padding:11px;font-family:inherit;font-size:14px;resize:vertical" placeholder="One or two sentences describing your store for Google & social shares." onchange="saveSetting('meta_description',this.value)">${esc(s.meta_description||'')}</textarea>
-    <div style="font-size:12px;color:var(--ink-soft);margin-top:8px">Used in the page title tag area, Open Graph share cards, and structured data.</div>
+    <div style="font-size:12px;color:var(--ink-soft);margin:6px 0 14px">Fallback description for pages without a curated one (home, repair, sell, business, track and legal pages already have tailored titles & descriptions).</div>
+    <div style="font-weight:600;font-size:13.5px;margin-bottom:5px">Keywords</div>
+    <input class="w" style="width:100%;font-size:13px" value="${esc(s.seo_keywords||'')}" placeholder="phone repair, laptop repair, sell old phone, doorstep repair…" onchange="saveSetting('seo_keywords',this.value)">
+    <div style="font-size:12px;color:var(--ink-soft);margin-top:8px">Comma-separated. Minor SEO signal; included in the meta keywords tag.</div>
+  </div>
+  <div class="card" style="padding:14px 16px">
+    <div style="font-weight:600;font-size:13.5px;margin-bottom:4px">Search Console &amp; sitemap</div>
+    <div style="font-size:12px;color:var(--ink-soft);margin-bottom:8px">Your sitemap is generated automatically at <a href="/sitemap.xml" target="_blank" style="color:var(--green-bright)">/sitemap.xml</a> and crawl rules at <a href="/robots.txt" target="_blank" style="color:var(--green-bright)">/robots.txt</a>. Verify ownership in Google Search Console (paste the token below), then submit your sitemap URL.</div>
+  </div>
+  <div class="eyebrow">Integrations &amp; tracking</div>
+  <div class="card" style="padding:14px 16px">
+    <div style="font-size:12px;color:var(--ink-soft);margin-bottom:10px">Paste the ID/token for any tool you use — its snippet is injected site-wide automatically. Leave blank to keep a tool off.</div>
+    ${[
+      ['ga4_id','Google Analytics 4 — Measurement ID','G-XXXXXXX'],
+      ['gtm_id','Google Tag Manager — Container ID','GTM-XXXXXXX'],
+      ['gsc_verification','Google Search Console — verification token','content value from the meta-tag method'],
+      ['meta_pixel_id','Meta (Facebook) Pixel — Pixel ID','1234567890'],
+      ['bing_verification','Bing Webmaster — verification code','msvalidate.01 content value'],
+      ['clarity_id','Microsoft Clarity — Project ID','abcdefghij']
+    ].map(([k,lbl,ph])=>`
+      <div style="font-weight:600;font-size:12.5px;margin:10px 0 4px">${lbl}</div>
+      <input class="w" style="width:100%;font-family:'JetBrains Mono',monospace;font-size:13px" value="${esc(s[k]||'')}" placeholder="${ph}" onchange="saveSetting('${k}',this.value.trim())">`).join('')}
+    <div style="font-size:12px;color:var(--ink-soft);margin-top:10px">Note: these load only on the public storefront, never on this admin console.</div>
   </div>
   <div class="eyebrow">Legal &amp; policies</div>
   <div class="card" style="padding:14px 16px">
@@ -598,7 +630,7 @@ function settingsView(){
   <div class="eyebrow">Pricing &amp; tax</div>
   <div class="crow card" style="border-radius:12px"><div class="grow" style="font-weight:600">GST applied to repair total</div><input class="num" type="number" value="${s.gst_percent||18}" onchange="saveSetting('gst_percent',+this.value)"> %</div>
   <div class="crow card" style="border-radius:12px"><div class="grow" style="font-weight:600">GSTIN (printed on tax invoices)</div><input style="max-width:220px;font-family:'JetBrains Mono',monospace;font-size:13px" value="${esc(s.gstin||'')}" placeholder="22AAAAA0000A1Z5" onchange="saveSetting('gstin',this.value.trim().toUpperCase())"></div>
-  <p class="lead" style="margin-top:18px">In production this screen also manages users, roles, and an audit log of changes. For real SEO, the storefront should be server-rendered (e.g. Next.js) with per-locality pages.</p>`;
+  <p class="lead" style="margin-top:18px">SEO is server-rendered: every public URL (/repair, /sell, /business, /track, legal pages) is served with its own title, description, canonical and Open Graph tags, plus breadcrumb structured data, a live sitemap and robots.txt. Set your Site URL above and verify in Search Console to go live.</p>`;
 }
 async function saveSetting(k,v){await api('/settings',{method:'PUT',body:JSON.stringify({[k]:v})});data.settings[k]=v;flash('Saved');}
 function pickImage(kind){const inp=document.createElement('input');inp.type='file';inp.accept='image/*';inp.onchange=async()=>{const f=inp.files[0];if(!f)return;try{const url=await resizeToDataURL(f,kind==='favicon'?64:360);if(url.length>700000){flash('Image too large — try a smaller one');return;}await api('/settings',{method:'PUT',body:JSON.stringify({[kind]:url})});data.settings[kind]=url;flash(kind+' updated');boot();}catch(e){flash('Could not read image');}};inp.click();}

@@ -29,6 +29,7 @@ const accessRouter = require('./routes/access');
 const serviceRouter = require('./routes/service');
 const chatRouter = require('./routes/chat');
 const { router: auditRouter, auditMiddleware } = require('./routes/audit');
+const seo = require('./routes/seo');
 
 const app = express();
 
@@ -61,9 +62,13 @@ app.use('/api', auditRouter);           // /audit, /audit.csv (superadmin)
 
 app.get('/api/health', (req, res) => res.json({ ok: true, ts: Date.now() }));
 
-// Frontend
+// SEO: sitemap + robots (dynamic, from settings).
+app.get('/sitemap.xml', (req, res) => { res.type('application/xml').send(seo.sitemapXml(req)); });
+app.get('/robots.txt', (req, res) => { res.type('text/plain').send(seo.robotsTxt(req)); });
+
+// Frontend static assets. index:false so "/" falls through to the injected shell.
 app.use(express.static(path.join(__dirname, 'public'), {
-  etag: true, lastModified: true,
+  index: false, etag: true, lastModified: true,
   setHeaders: (res, p) => {
     // Always revalidate HTML/CSS/JS so browsers pick up new builds immediately
     // (returns 304 when unchanged — cheap — and fresh content after a deploy).
@@ -71,8 +76,12 @@ app.use(express.static(path.join(__dirname, 'public'), {
   },
 }));
 app.get('/admin', (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
-// Dedicated landing URLs (e.g. for ad campaigns) — all served by the storefront SPA.
-app.get(['/business', '/for-business'], (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+
+// SPA routes — serve the storefront shell with per-URL SEO meta injected.
+const sendShell = (req, res) => res.type('html').set('Cache-Control', 'no-cache').send(seo.renderShell(req.path, req));
+app.get(seo.SPA_PATHS, sendShell);
+// Catch-all for any other non-API, non-file GET → SPA shell (deep links don't 404).
+app.get(/^\/(?!api\/)(?!.*\.[a-z0-9]{1,8}$).*/i, sendShell);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {

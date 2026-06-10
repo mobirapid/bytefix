@@ -3,20 +3,13 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>ReGear — Repair or sell your phone, laptop & gadgets</title>
-<meta name="description" content="Get your phone, laptop, tablet or smartwatch repaired at your doorstep, or sell it instantly for the best price. Free pickup, instant payment, 12-month warranty." />
-<meta name="keywords" content="phone repair, laptop repair, sell old phone, sell used laptop, doorstep repair, instant quote, recommerce" />
-<link rel="canonical" href="https://regear.in/" />
-<meta property="og:type" content="website" />
-<meta property="og:title" content="ReGear — Repair or sell your gadgets" />
-<meta property="og:description" content="Doorstep repairs and instant resale for phones, laptops, tablets & more. Free pickup, instant payment, 12-month warranty." />
-<meta property="og:site_name" content="ReGear" />
-<meta name="twitter:card" content="summary_large_image" />
+<!--SEO_HEAD-->
 <link id="favicon" rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231B6B49'/%3E%3Crect x='11' y='11' width='10' height='10' rx='3' fill='%2316A06A'/%3E%3C/svg%3E" />
 <script id="ld" type="application/ld+json"></script>
 <link rel="stylesheet" href="/app.css">
 </head>
 <body>
+<!--SEO_BODY-->
 <header class="site"><div class="container nav">
   <div id="backBtn" class="back" onclick="goBack()">←</div>
   <div class="brand" id="brandMark" onclick="showHome()"><span class="dot"></span><span id="brandName">ReGear</span></div>
@@ -50,7 +43,9 @@
   <button class="cta signupbtn" id="signupBtnM" onclick="closeMenu();signupClick()">Sign up</button>
   <button class="cta green" onclick="closeMenu();scrollStart()">Get a quote</button>
 </div></header>
+<nav id="crumbs" class="crumbs" aria-label="Breadcrumb" style="display:none"></nav>
 <div id="view"><div class="flowwrap center" style="color:var(--ink-soft)">Loading…</div></div>
+<script id="ldcrumb" type="application/ld+json"></script>
 
 <div id="cityModal" class="modal-ov" onclick="if(event.target===this)closeCityModal()">
   <div class="modal-box">
@@ -292,12 +287,69 @@ const cat=id=>CATALOG.find(c=>c.id===id);
 const esc=s=>String(s==null?'':s).replace(/</g,'&lt;');
 const catEmoji=c=>(c&&(c.emoji||'').startsWith('data:'))?`<img src="${c.emoji}" alt="" style="height:1em;width:auto;vertical-align:-.15em">`:((c&&c.emoji)||'📦');
 
+/* ---------------- SEO client router: real URLs + breadcrumbs + per-page meta ---------------- */
+function routeMetaC(p){
+  const b=SET.brand_name||'ByteFix';
+  const M={
+    '/':{t:b+' — Repair or sell your phone, laptop & gadgets',d:'Get your phone, laptop, tablet or smartwatch repaired at your doorstep, or sell it instantly for the best price. Free pickup, instant payment, 12-month warranty.',crumb:[]},
+    '/repair':{t:'Doorstep Phone & Laptop Repair | '+b,d:'Book a doorstep repair for your phone, laptop, tablet or smartwatch. Transparent upfront pricing, genuine parts, certified technicians and a 12-month warranty from '+b+'.',crumb:[['Repair','/repair']]},
+    '/sell':{t:'Sell Your Old Phone, Laptop & Gadgets | '+b,d:'Sell your used phone, laptop or tablet at the best market price. Instant quote, free doorstep pickup, secure certified data wipe and instant payment with '+b+'.',crumb:[['Sell','/sell']]},
+    '/business':{t:'Bulk Device Buyback & Refurbished Procurement for Business | '+b,d:'Sell your retired company fleet or buy quality-graded refurbished devices in bulk. Certified data wiping, GST invoicing and a dedicated account manager from '+b+'.',crumb:[['For business','/business']]},
+    '/track':{t:'Track Your Repair or Resale Order | '+b,d:'Track the live status of your '+b+' repair or resale order with your order reference.',crumb:[['Track order','/track']]},
+    '/privacy':{t:'Privacy Policy | '+b,d:'How '+b+' collects, uses and protects your personal data.',crumb:[['Legal',null],['Privacy Policy','/privacy']]},
+    '/terms':{t:'Terms of Service | '+b,d:'The terms and conditions for using '+b+' services.',crumb:[['Legal',null],['Terms of Service','/terms']]},
+    '/refund':{t:'Refund & Cancellation Policy | '+b,d:'Refund and cancellation terms for '+b+' repairs and resale.',crumb:[['Legal',null],['Refund & Cancellation','/refund']]},
+    '/shipping':{t:'Shipping & Pickup Policy | '+b,d:'Pickup, drop-off and delivery terms for '+b+' orders.',crumb:[['Legal',null],['Shipping & Pickup','/shipping']]},
+    '/service-requests':{t:'Service Requests | '+b,d:'',crumb:[['Service Requests','/service-requests']]}
+  };
+  return M[p==='/for-business'?'/business':p]||null;
+}
+function _meta(key,val,prop){const sel=prop?'meta[property="'+key+'"]':'meta[name="'+key+'"]';let el=document.head.querySelector(sel);if(!el){el=document.createElement('meta');el.setAttribute(prop?'property':'name',key);document.head.appendChild(el);}el.setAttribute('content',val||'');}
+function _canon(href){let el=document.head.querySelector('link[rel="canonical"]');if(!el){el=document.createElement('link');el.setAttribute('rel','canonical');document.head.appendChild(el);}el.setAttribute('href',href);}
+function applyRouteMeta(p){
+  const b=SET.brand_name||'ByteFix';const m=routeMetaC(p);const norm=p==='/for-business'?'/business':p;
+  const title=m?m.t:b;const desc=(m&&m.d)||SET.meta_description||(b+' — doorstep device repair and instant resale.');
+  const url=location.origin+(norm==='/'?'/':norm);
+  document.title=title;_meta('description',desc);_canon(url);
+  _meta('og:type','website',true);_meta('og:site_name',b,true);_meta('og:title',title,true);_meta('og:description',desc,true);_meta('og:url',url,true);
+  _meta('twitter:title',title);_meta('twitter:description',desc);
+  renderCrumbs(m,norm);
+}
+function renderCrumbs(m,norm){
+  const bar=document.getElementById('crumbs');const ld=document.getElementById('ldcrumb');if(!bar)return;
+  if(!m||norm==='/'){bar.style.display='none';bar.innerHTML='';if(ld)ld.textContent='';return;}
+  const crumbs=[['Home','/']].concat(m.crumb||[]);bar.style.display='';
+  bar.innerHTML='<div class="container">'+crumbs.map((c,i)=>{const last=i===crumbs.length-1;const name=esc(c[0]);const node=last?'<span aria-current="page">'+name+'</span>':(c[1]?'<a href="'+c[1]+'" onclick="navGo(\''+c[1]+'\');return false">'+name+'</a>':'<span>'+name+'</span>');return node+(last?'':'<span class="csep">›</span>');}).join('')+'</div>';
+  if(ld){const items=crumbs.filter(c=>c[1]).map((c,i)=>({'@type':'ListItem',position:i+1,name:c[0],item:location.origin+(c[1]==='/'?'/':c[1])}));ld.textContent=JSON.stringify({'@context':'https://schema.org','@type':'BreadcrumbList',itemListElement:items});}
+}
+function markRoute(p){if(location.pathname!==p){history.pushState({},'',p);}applyRouteMeta(p);}
+function navGo(p){if(location.pathname!==p)history.pushState({},'',p);dispatchPath(p);}
+function dispatchPath(p){p=(p||'/').replace(/\/+$/,'')||'/';
+  if(p==='/')showHome();
+  else if(p==='/repair')startFix();
+  else if(p==='/sell')startSell();
+  else if(p==='/business'||p==='/for-business')showCorporate();
+  else if(p==='/track')showTrackPage();
+  else if(p==='/service-requests')showService();
+  else if(p==='/privacy'||p==='/terms'||p==='/refund'||p==='/shipping')showPolicy(p.slice(1));
+  else showHome();
+}
+function showTrackPage(){mode='page';stack=[];syncHeader();markRoute('/track');
+  document.getElementById('view').innerHTML='<section class="block"><div class="container" style="max-width:560px">'
+    +'<div class="kicker" style="text-align:left">Track order</div><h2 style="text-align:left">Track your order</h2>'
+    +'<p class="lead" style="text-align:left">Enter your order reference to see its live status.</p>'
+    +'<div class="field"><label>Order ID</label><input id="trk_ref" placeholder="e.g. RGAB12C" style="text-transform:uppercase" onkeydown="if(event.key===\'Enter\')doTrack()"></div>'
+    +'<button class="btn green" onclick="doTrack()">Track →</button></div></section>'+footerHTML();
+  window.scrollTo({top:0});}
+function doTrack(){const v=(document.getElementById('trk_ref')||{}).value||'';const r=v.trim().toUpperCase();if(r)trackRef(r);}
+
 async function boot(){
   try{[CATALOG,CONDITIONS,SET,STAT]=await Promise.all([api('/catalog'),api('/conditions'),api('/settings'),api('/service/order-statuses')]);}
   catch(e){document.getElementById('view').innerHTML='<div class="flowwrap center">Could not reach server. Run <b>npm start</b>.</div>';return;}
-  applyBranding();showHome();
+  applyBranding();
   if(/[?&]emaillink=/i.test(location.search)){if(await handleEmailLinkReturn())return;}
-  if(/^\/(business|for-business)\/?$/i.test(location.pathname)){corpIntent='sell';showCorporate();}
+  dispatchPath(location.pathname);
+  window.addEventListener('popstate',()=>dispatchPath(location.pathname));
 }
 function applyBranding(){
   const bn=SET.brand_name||'ReGear';
@@ -317,7 +369,7 @@ function applyBranding(){
 
 /* ---------------- HOME (marketing) ---------------- */
 function showHome(){
-  mode='home';stack=[];syncHeader();
+  mode='home';stack=[];syncHeader();markRoute('/');
   const v=document.getElementById('view');
   v.innerHTML=marqueeHTML()+heroHTML()+howHTML()+catsHTML()+featHTML()+statsHTML()+testiHTML()+corpBandHTML()+faqHTML()+ctaHTML()+footerHTML();
   renderMyOrders();
@@ -389,10 +441,16 @@ function faqHTML(){const qs=[['Is the diagnosis really free?','Yes. For repairs,
 function ctaHTML(){return `<section class="block" style="padding-top:0"><div class="container"><div class="ctaband"><h2>Your gadget deserves better.</h2><p>Whether it needs fixing or it's time to let go — get a price in under a minute.</p>
   <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap"><button class="cta" onclick="startFix()">🛠️ Fix a device</button><button class="cta" onclick="startSell()">💸 Sell a device</button></div></div></div></section>`;}
 
+function socialsHTML(){
+  const wa=s=>{const v=String(s||'').trim();if(!v)return'';return /^https?:/i.test(v)?v:'https://wa.me/'+v.replace(/\D/g,'');};
+  const links=[['social_instagram','◎','Instagram',SET.social_instagram],['social_twitter','✕','X',SET.social_twitter],['social_facebook','f','Facebook',SET.social_facebook],['social_linkedin','in','LinkedIn',SET.social_linkedin],['social_youtube','▶','YouTube',SET.social_youtube],['social_whatsapp','✆','WhatsApp',wa(SET.social_whatsapp)]];
+  const out=links.filter(l=>l[3]).map(l=>`<a href="${esc(l[3])}" target="_blank" rel="noopener noreferrer" aria-label="${l[2]}">${l[1]}</a>`).join('');
+  return out||`<a href="#" aria-label="Instagram">◎</a><a href="#" aria-label="WhatsApp">✆</a>`;
+}
 function footerHTML(){const bn=SET.brand_name||'ReGear';return `<footer class="site"><div class="container"><div class="foot-grid">
   <div><div class="brand" style="font-size:22px">${SET.logo?`<img src="${SET.logo}" alt="${esc(bn)}" style="height:30px">`:`<span class="dot"></span>${esc(bn)}`}</div>
     <p class="tg">Doorstep device repair and instant resale for ${esc(SET.city||'your city')}.</p>
-    <div class="socials"><a href="#" aria-label="Instagram">◎</a><a href="#" aria-label="Twitter">✕</a><a href="#" aria-label="Facebook">f</a><a href="#" aria-label="WhatsApp">✆</a></div>
+    <div class="socials">${socialsHTML()}</div>
   </div>
   <div><h4>Services</h4><ul><li><a class="li" onclick="startFix()">Fix a device</a></li><li><a class="li" onclick="startSell()">Sell a device</a></li><li><a class="li" onclick="showCorporate()">For business</a></li><li><a class="li" onclick="openTrack()">Track order</a></li></ul></div>
   <div><h4>Devices</h4><ul>${CATALOG.slice(0,5).map(c=>`<li><a class="li" onclick="startCat(${c.id})">${esc(c.name)}</a></li>`).join('')}</ul></div>
@@ -403,7 +461,7 @@ function footerHTML(){const bn=SET.brand_name||'ReGear';return `<footer class="s
   </div>
 </div><div class="foot-bottom"><span>© ${new Date().getFullYear()} ${esc(bn)}. All rights reserved.</span><span class="foot-legal"><a onclick="showPolicy('privacy');return false" href="#">Privacy</a> · <a onclick="showPolicy('terms');return false" href="#">Terms</a> · <a onclick="showPolicy('refund');return false" href="#">Refunds</a> · <a onclick="showPolicy('shipping');return false" href="#">Shipping</a></span></div></div></footer>`;}
 const POLICY_TITLES={privacy:'Privacy Policy',terms:'Terms of Service',refund:'Refund & Cancellation Policy',shipping:'Shipping & Pickup Policy'};
-function showPolicy(key){mode='page';stack=[];syncHeader();
+function showPolicy(key){mode='page';stack=[];syncHeader();markRoute('/'+key);
   const raw=SET['policy_'+key]||'';const title=POLICY_TITLES[key]||'Policy';
   const body=raw?esc(raw).replace(/\n{2,}/g,'</p><p>').replace(/\n/g,'<br>'):'This policy has not been published yet.';
   document.getElementById('view').innerHTML=`<section class="block"><div class="container" style="max-width:760px">
@@ -424,7 +482,7 @@ function corpBandHTML(){return `<section class="block" id="business"><div class=
   <div class="biz-stats"><div><b>500+</b><span>devices per order</span></div><div><b>&lt;24h</b><span>team responds</span></div><div><b>100%</b><span>data wiped &amp; certified</span></div></div>
 </div></div></section>`;}
 
-function showCorporate(){mode='page';stack=[];syncHeader();const v=document.getElementById('view');v.innerHTML=corporateHTML()+footerHTML();window.scrollTo({top:0});}
+function showCorporate(){mode='page';stack=[];syncHeader();markRoute('/business');const v=document.getElementById('view');v.innerHTML=corporateHTML()+footerHTML();window.scrollTo({top:0});}
 const FREE_EMAIL=['gmail.com','googlemail.com','yahoo.com','yahoo.in','yahoo.co.in','outlook.com','hotmail.com','live.com','msn.com','icloud.com','me.com','aol.com','proton.me','protonmail.com','rediffmail.com','ymail.com','gmx.com','mail.com'];
 function emailDomain(e){return (String(e).split('@')[1]||'').toLowerCase();}
 function isWorkEmail(e){return EMAIL_RE.test(e)&&!FREE_EMAIL.includes(emailDomain(e));}
@@ -494,8 +552,8 @@ async function submitCorp(){
 
 /* ---------------- FLOW ---------------- */
 function freshS(extra){const s=Object.assign({},extra);if(ME){if(ME.name)s.name=ME.name;if(ME.email)s.email=ME.email;if(ME.phone)s.phone=ME.phone;}return s;}
-function startFix(){S=freshS({mode:'fix',issues:[]});enterFlow(pickCat);}
-function startSell(){S=freshS({mode:'sell',answers:{},qi:0});enterFlow(pickCat);}
+function startFix(){S=freshS({mode:'fix',issues:[]});enterFlow(pickCat);markRoute('/repair');}
+function startSell(){S=freshS({mode:'sell',answers:{},qi:0});enterFlow(pickCat);markRoute('/sell');}
 function startCat(id){S=freshS({cat:id});enterFlow(choosePurpose);}
 function enterFlow(fn){mode='flow';stack=[fn];syncHeader();renderFlow();}
 function nav(fn){stack.push(fn);renderFlow();}
@@ -609,7 +667,7 @@ async function placeOrder(){
 function done(){const fix=S.mode==='fix';return `<div class="center"><div class="tick ${fix?'':'amber'}">✓</div><h1 style="font-size:30px">${fix?'Repair booked!':'Pickup scheduled!'}</h1><p class="fsub">${fix?'A technician is assigned for':'Our agent will collect your device'} <b style="color:var(--ink)">${S.slot}</b>.</p><div class="oid">Order ${S.order}</div>
   <div class="quote" style="text-align:left"><div class="qrow"><span>Device</span><b>${esc(S.modelName)}</b></div><div class="qrow"><span>${fix?'Service':'Payout'}</span><b>${fix?MODES.find(m=>m[0]===S.svc)[2]:'Instant at pickup'}</b></div><div class="qrow tot"><span>${fix?'Estimated total':'You get'}</span><b style="${fix?'':'color:var(--amber)'}">${INR(S.amount)}</b></div></div>
   <button class="btn green" style="margin-top:16px" onclick="trackRef('${S.order}')">Track this order →</button><button class="btn btn-ghost" onclick="showHome()">Back to home</button></div>`;}
-function openTrack(){const r=prompt('Enter your order ID (e.g. RGAB12C):');if(r)trackRef(r.trim().toUpperCase());}
+function openTrack(){showTrackPage();}
 async function trackRef(ref){try{S.tracked=await api('/orders/'+ref);}catch(e){alert('Order not found');return;}
   try{S.templates=await api('/order-templates');}catch(e){S.templates=[];}
   try{S.thread=await api('/service/orders/'+ref+'/thread');}catch(e){S.thread=[];}
@@ -743,6 +801,7 @@ async function doStaffLogin(){const username=val('st_user'),password=val('st_pas
 
 /* ---------------- Operator: Service Requests console ---------------- */
 async function showService(){
+  markRoute('/service-requests');
   if(!hasPerm('service_requests')){enterFlow(staffLogin);return;}
   mode='flow';stack=[serviceList];syncHeader();
   try{S.svc=await aapi('/service/orders');}catch(e){S.svc=[];}

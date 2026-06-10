@@ -410,3 +410,11 @@ html,body{max-width:100%;overflow-x:hidden}   /* safety net against horizontal s
 .qcwrap{display:flex;flex-direction:column;gap:7px}
 .qcitem{display:flex;align-items:flex-start;gap:8px;font-size:13.5px;color:var(--ink);cursor:pointer}
 .qcitem input{margin-top:2px;accent-color:var(--green);width:16px;height:16px;flex:0 0 auto}
+
+/* Breadcrumbs (SEO + wayfinding) */
+.crumbs{border-bottom:1px solid var(--line);background:var(--card)}
+.crumbs .container{display:flex;align-items:center;flex-wrap:wrap;gap:6px;padding-top:10px;padding-bottom:10px;font-size:13px;color:var(--ink-soft)}
+.crumbs a{color:var(--green-bright);text-decoration:none}
+.crumbs a:hover{text-decoration:underline}
+.crumbs span[aria-current="page"]{color:var(--ink);font-weight:600}
+.crumbs .csep{color:var(--ink-soft);opacity:.6}
