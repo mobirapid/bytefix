@@ -66,9 +66,9 @@ function renderLogin(msg){
 function renderForgot(prefill){
   document.getElementById('root').innerHTML=`<div class="login"><div class="box">
     <div class="brand"><span class="dot"></span><div><b>ReGear</b><small>Admin console</small></div></div>
-    <div class="card2"><h2>Reset password</h2><p>We'll email a secure way to reset your password to your admin email.</p>
+    <div class="card2"><h2>Reset password</h2><p>We'll email a secure sign-in link to your admin email. Open it to set a new password.</p>
       <label>Admin email</label><input id="fe" value="${esc(prefill||'')}" placeholder="admin@yourdomain">
-      <button class="btn ink" style="width:100%;margin-top:16px" onclick="sendReset()">Send code</button>
+      <button class="btn ink" style="width:100%;margin-top:16px" onclick="sendReset()">Send reset link</button>
       <div id="fmsg" class="hint" style="min-height:14px"></div>
       <div class="hint"><a style="color:var(--green-bright);cursor:pointer;font-weight:600" onclick="renderLogin()">← Back to sign in</a></div>
     </div></div></div>`;
