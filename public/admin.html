@@ -25,6 +25,18 @@ async function api(path,opts={}){
   return r.json();
 }
 
+/* ---- Firebase email-link (passwordless) for admin password reset ---- */
+let ADMSET=null;
+async function adminSettings(){if(!ADMSET){try{ADMSET=await fetch(API+'/settings').then(r=>r.json());}catch(e){ADMSET={};}}return ADMSET;}
+function fbConfig(){try{return JSON.parse((ADMSET&&ADMSET.firebase_config)||'{}');}catch(e){return {};}}
+function fbEmailEnabled(){const c=fbConfig();return ADMSET&&ADMSET.otp_email_firebase==='1'&&c&&c.apiKey&&c.projectId;}
+let _fbReady=null,_fbAuth=null;
+function loadFirebase(){if(_fbReady)return _fbReady;_fbReady=new Promise((res,rej)=>{
+  const add=(src,cb)=>{const s=document.createElement('script');s.src=src;s.onload=cb;s.onerror=()=>rej(new Error('Firebase failed to load'));document.head.appendChild(s);};
+  add('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js',()=>add('https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js',()=>{
+    try{if(!firebase.apps.length)firebase.initializeApp(fbConfig());_fbAuth=firebase.auth();res();}catch(e){rej(e);}}));
+});return _fbReady;}
+
 const PAGES={
   overview:['Overview','Your store at a glance','◫'],
   catalog:['Catalog','Device types, brands & models','▦'],
@@ -53,7 +65,7 @@ function renderLogin(msg){
 function renderForgot(prefill){
   document.getElementById('root').innerHTML=`<div class="login"><div class="box">
     <div class="brand"><span class="dot"></span><div><b>ReGear</b><small>Admin console</small></div></div>
-    <div class="card2"><h2>Reset password</h2><p>We'll email a 6-digit code to your admin email.</p>
+    <div class="card2"><h2>Reset password</h2><p>We'll email a secure way to reset your password to your admin email.</p>
       <label>Admin email</label><input id="fe" value="${esc(prefill||'')}" placeholder="admin@yourdomain">
       <button class="btn ink" style="width:100%;margin-top:16px" onclick="sendReset()">Send code</button>
       <div id="fmsg" class="hint" style="min-height:14px"></div>
@@ -63,8 +75,63 @@ function renderForgot(prefill){
 async function sendReset(){
   const email=document.getElementById('fe').value.trim();const m=document.getElementById('fmsg');
   if(!email){m.textContent='Enter your admin email.';return;}
+  await adminSettings();
+  if(fbEmailEnabled()){
+    m.textContent='Sending secure link…';
+    try{
+      await loadFirebase();
+      localStorage.setItem('regear_admin_reset_email',email);
+      const acs={url:location.origin+'/admin?emaillink=adminreset',handleCodeInApp:true};
+      await _fbAuth.sendSignInLinkToEmail(email,acs);
+      renderLinkSent(email);
+    }catch(e){m.textContent=e.message||'Could not send the link.';}
+    return;
+  }
   try{await fetch(API+'/auth/forgot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});
     renderReset(email);}catch(e){m.textContent='Could not reach server.';}
+}
+function renderLinkSent(email){
+  document.getElementById('root').innerHTML=`<div class="login"><div class="box">
+    <div class="brand"><span class="dot"></span><div><b>ReGear</b><small>Admin console</small></div></div>
+    <div class="card2"><h2>Check your email</h2><p>If an admin account exists for <b>${esc(email)}</b>, we've emailed a secure sign-in link. Open it on this device to set a new password.</p>
+      <div class="hint"><a style="color:var(--green-bright);cursor:pointer;font-weight:600" onclick="renderForgot('${esc(email)}')">← Resend / change email</a></div>
+    </div></div></div>`;
+}
+// Returned from a Firebase email link → verify, then show set-new-password.
+async function handleAdminEmailLink(){
+  await adminSettings();
+  if(!fbEmailEnabled())return false;
+  try{await loadFirebase();}catch(e){return false;}
+  if(!_fbAuth.isSignInWithEmailLink(location.href))return false;
+  let email=localStorage.getItem('regear_admin_reset_email')||'';
+  if(!email){email=window.prompt('Confirm your admin email to finish')||'';}
+  try{
+    const cred=await _fbAuth.signInWithEmailLink(email,location.href);
+    const idToken=await cred.user.getIdToken();
+    history.replaceState({},'','/admin');
+    const r=await fetch(API+'/auth/forgot-firebase',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({idToken})}).then(x=>x.json().then(d=>({ok:x.ok,d})));
+    localStorage.removeItem('regear_admin_reset_email');
+    if(!r.ok){renderForgot(email);setTimeout(()=>{const m=document.getElementById('fmsg');if(m)m.textContent=(r.d&&r.d.error)||'This email is not an admin account.';},0);return true;}
+    renderResetFirebase(r.d.ticket,email);
+    return true;
+  }catch(e){renderForgot(email);return true;}
+}
+function renderResetFirebase(ticket,email){
+  document.getElementById('root').innerHTML=`<div class="login"><div class="box">
+    <div class="brand"><span class="dot"></span><div><b>ReGear</b><small>Admin console</small></div></div>
+    <div class="card2"><h2>Set a new password</h2><p>Email verified for <b>${esc(email)}</b>. Choose a new password.</p>
+      <label>New password</label><input id="rp" type="password" placeholder="At least 6 characters" onkeydown="if(event.key==='Enter')doResetFirebase('${esc(ticket)}')">
+      <button class="btn ink" style="width:100%;margin-top:16px" onclick="doResetFirebase('${esc(ticket)}')">Update password</button>
+      <div id="rmsg" class="hint" style="min-height:14px"></div>
+    </div></div></div>`;
+}
+async function doResetFirebase(ticket){
+  const password=document.getElementById('rp').value;const m=document.getElementById('rmsg');
+  if(password.length<6){m.textContent='Password must be at least 6 characters.';return;}
+  try{const r=await fetch(API+'/auth/reset-firebase',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticket,password})});
+    const d=await r.json();if(!r.ok){m.textContent=d.error||'Could not reset.';return;}
+    renderLogin('Password updated — sign in with your new password.');
+  }catch(e){m.textContent='Could not reach server.';}
 }
 function renderReset(email){
   document.getElementById('root').innerHTML=`<div class="login"><div class="box">
@@ -493,6 +560,11 @@ function settingsView(){
       <label class="swt"><input type="checkbox" ${s.otp_firebase==='1'?'checked':''} onchange="data.settings.otp_firebase=this.checked?'1':'0';saveSetting('otp_firebase',data.settings.otp_firebase)"><span>${s.otp_firebase==='1'?'On':'Off'}</span></label>
     </div>
     <div style="font-size:12px;color:var(--ink-soft);margin:6px 0 8px">When on, customer phone verification uses Firebase Phone Auth (real SMS). When off, the built-in OTP (demo code / MSG91) is used. Enable Phone provider in Firebase and add <code>${esc(s.brand_name||'your domain')}</code> to Authorized domains.</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:10px">
+      <div style="font-weight:600;font-size:13.5px">Email verification via Firebase</div>
+      <label class="swt"><input type="checkbox" ${s.otp_email_firebase==='1'?'checked':''} onchange="data.settings.otp_email_firebase=this.checked?'1':'0';saveSetting('otp_email_firebase',data.settings.otp_email_firebase)"><span>${s.otp_email_firebase==='1'?'On':'Off'}</span></label>
+    </div>
+    <div style="font-size:12px;color:var(--ink-soft);margin:6px 0 8px">When on, email verification (B2B work email + admin password reset) uses Firebase passwordless <b>email link</b> — Google sends the email and the user clicks a link to verify. When off, the built-in 6-digit email code is used. Enable the <b>Email/Password → Email link (passwordless)</b> provider in Firebase and add your domain to Authorized domains.</div>
     <div style="font-weight:600;font-size:12.5px;margin-bottom:5px">Firebase web config (JSON)</div>
     <textarea class="w" rows="6" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:11px;font-family:'JetBrains Mono',monospace;font-size:12px;resize:vertical" placeholder='{ "apiKey": "...", "authDomain": "...", "projectId": "...", "appId": "..." }' onchange="saveSetting('firebase_config',this.value.trim())">${esc(s.firebase_config||'')}</textarea>
     <div style="font-size:12px;color:var(--ink-soft);margin-top:8px">Paste the <b>Firebase config object</b> from Firebase Console → Project settings → Your web app. Requires the Blaze plan for production SMS.</div>
@@ -683,7 +755,7 @@ async function downloadAudit(){
   catch(e){flash('Could not export');}
 }
 
-boot();
+(/[?&]emaillink=adminreset/i.test(location.search)?handleAdminEmailLink().then(h=>{if(!h)boot();}):boot());
 </script>
 </body>
 </html>

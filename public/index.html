@@ -121,6 +121,7 @@ function signupClick(){S.authMode='signup';S.fromBooking=false;enterFlow(loginPh
 /* ---- Phone OTP layer: Firebase when enabled in admin, else server OTP ---- */
 function fbConfig(){try{return JSON.parse(SET.firebase_config||'{}');}catch(e){return {};}}
 function fbEnabled(){const c=fbConfig();return SET.otp_firebase==='1'&&c&&c.apiKey&&c.projectId;}
+function fbEmailEnabled(){const c=fbConfig();return SET.otp_email_firebase==='1'&&c&&c.apiKey&&c.projectId;}
 let _fbReady=null,_fbAuth=null;
 function loadFirebase(){if(_fbReady)return _fbReady;_fbReady=new Promise((res,rej)=>{
   const add=(src,cb)=>{const s=document.createElement('script');s.src=src;s.onload=cb;s.onerror=()=>rej(new Error('Firebase failed to load'));document.head.appendChild(s);};
@@ -128,6 +129,36 @@ function loadFirebase(){if(_fbReady)return _fbReady;_fbReady=new Promise((res,re
     try{if(!firebase.apps.length)firebase.initializeApp(fbConfig());_fbAuth=firebase.auth();res();}catch(e){rej(e);}}));
 });return _fbReady;}
 function e164(){return (S.dial||'+91')+String(S.phone||'').replace(/\D/g,'');}
+// Firebase passwordless email link: send a sign-in link the user clicks to verify.
+async function sendEmailLink(email,kind){
+  await loadFirebase();
+  localStorage.setItem('regear_emaillink',kind);
+  localStorage.setItem('regear_emaillink_email',email);
+  const acs={url:location.origin+location.pathname+'?emaillink='+encodeURIComponent(kind),handleCodeInApp:true};
+  await _fbAuth.sendSignInLinkToEmail(email,acs);
+}
+// On load: if we returned from an email link, complete sign-in and restore state.
+async function handleEmailLinkReturn(){
+  if(!fbEmailEnabled())return false;
+  let auth;try{await loadFirebase();auth=_fbAuth;}catch(e){return false;}
+  if(!auth.isSignInWithEmailLink(location.href))return false;
+  const kind=localStorage.getItem('regear_emaillink')||'';
+  let email=localStorage.getItem('regear_emaillink_email')||'';
+  if(!email){email=window.prompt('Confirm the email you used to verify')||'';}
+  try{
+    const cred=await auth.signInWithEmailLink(email,location.href);
+    const idToken=await cred.user.getIdToken();
+    history.replaceState({},'',location.pathname);
+    const r=await api('/otp/email/firebase',{method:'POST',body:JSON.stringify({idToken})});
+    if(kind==='corp'){
+      try{S.corp=JSON.parse(localStorage.getItem('regear_corp')||'{}');}catch(e){S.corp=S.corp||{};}
+      S.corp.email=r.email||email;S.corp.emailToken=r.token;S.corp.emailV=true;S.corp.emailOtp=false;S.corp.emailLinkSent=false;S.corp.emailMsg='';
+    }
+  }catch(e){console.error('[emaillink]',e.message);}
+  localStorage.removeItem('regear_emaillink');localStorage.removeItem('regear_emaillink_email');localStorage.removeItem('regear_corp');
+  if(kind==='corp'){showCorporate();return true;}
+  return false;
+}
 async function otpSend(){
   if(fbEnabled()){
     await loadFirebase();
@@ -265,6 +296,7 @@ async function boot(){
   try{[CATALOG,CONDITIONS,SET,STAT]=await Promise.all([api('/catalog'),api('/conditions'),api('/settings'),api('/service/order-statuses')]);}
   catch(e){document.getElementById('view').innerHTML='<div class="flowwrap center">Could not reach server. Run <b>npm start</b>.</div>';return;}
   applyBranding();showHome();
+  if(/[?&]emaillink=/i.test(location.search)){if(await handleEmailLinkReturn())return;}
   if(/^\/(business|for-business)\/?$/i.test(location.pathname)){corpIntent='sell';showCorporate();}
 }
 function applyBranding(){
@@ -400,7 +432,9 @@ function workEmailReason(e){return EMAIL_RE.test(e)?'Please use your company (wo
 function corpCapture(){S.corp=S.corp||{};const g=id=>{const e=document.getElementById(id);return e?e.value:undefined;};['company','name','email','phone','qty','types','msg'].forEach(k=>{const v=g('c_'+k);if(v!==undefined)S.corp[k]=v;});const cc=g('c_cc');if(cc!==undefined)S.corp.cc=cc;}
 function corpEdit(kind){S.corp=S.corp||{};S.corp[kind+'V']=false;S.corp[kind+'Token']=null;S.corp[kind+'Otp']=false;S.corp[kind+'Msg']='';showCorporate();}
 function setCorpIntent(i){corpCapture();corpIntent=i;showCorporate();}
-async function corpSendEmail(){corpCapture();const email=(S.corp.email||'').trim();if(!isWorkEmail(email)){S.corp.emailMsg=workEmailReason(email);showCorporate();return;}S.corp.emailMsg='';try{const r=await api('/otp/email/send',{method:'POST',body:JSON.stringify({email})});S.corp.emailOtp=true;S.corp.emailDev=r.dev_code||'';showCorporate();}catch(e){S.corp.emailMsg=e.message;showCorporate();}}
+async function corpSendEmail(){corpCapture();const email=(S.corp.email||'').trim();if(!isWorkEmail(email)){S.corp.emailMsg=workEmailReason(email);showCorporate();return;}S.corp.emailMsg='';
+  if(fbEmailEnabled()){try{localStorage.setItem('regear_corp',JSON.stringify(S.corp));await sendEmailLink(email,'corp');S.corp.emailLinkSent=true;S.corp.emailOtp=false;showCorporate();}catch(e){S.corp.emailMsg=e.message||'Could not send the link right now.';showCorporate();}return;}
+  try{const r=await api('/otp/email/send',{method:'POST',body:JSON.stringify({email})});S.corp.emailOtp=true;S.corp.emailDev=r.dev_code||'';showCorporate();}catch(e){S.corp.emailMsg=e.message;showCorporate();}}
 async function corpConfirmEmail(){corpCapture();const code=(document.getElementById('c_email_code')||{}).value||'';try{const r=await api('/otp/email/verify',{method:'POST',body:JSON.stringify({email:S.corp.email,code})});S.corp.emailToken=r.token;S.corp.emailV=true;S.corp.emailOtp=false;S.corp.emailMsg='';showCorporate();}catch(e){S.corp.emailMsg=e.message;showCorporate();}}
 async function corpSendPhone(){corpCapture();const digits=(S.corp.phone||'').replace(/\D/g,'');if(digits.length<10){S.corp.phoneMsg='Enter a valid 10-digit number';showCorporate();return;}S.corp.phoneMsg='';try{const r=await api('/otp/send',{method:'POST',body:JSON.stringify({phone:S.corp.phone})});S.corp.phoneOtp=true;S.corp.phoneDev=r.dev_code||'';showCorporate();}catch(e){S.corp.phoneMsg=e.message;showCorporate();}}
 async function corpConfirmPhone(){corpCapture();const code=(document.getElementById('c_phone_code')||{}).value||'';try{const r=await api('/otp/verify',{method:'POST',body:JSON.stringify({phone:S.corp.phone,code})});S.corp.phoneToken=r.token;S.corp.phoneV=true;S.corp.phoneOtp=false;S.corp.phoneMsg='';showCorporate();}catch(e){S.corp.phoneMsg=e.message;showCorporate();}}
@@ -422,7 +456,8 @@ function corporateHTML(){
         <div class="field" style="margin-top:0"><label>Contact person</label><input id="c_name" placeholder="Your name" value="${esc(c.name||'')}"></div>
         <div class="field full" style="margin-top:0"><label>Work email *</label>
           <div class="vrow"><input id="c_email" type="email" placeholder="you@company.com" value="${esc(c.email||'')}" ${c.emailV?'disabled':''}>
-            ${c.emailV?`<span class="vok">✓ Verified</span>`:`<button type="button" class="btn ghost vbtn" onclick="corpSendEmail()">${c.emailOtp?'Resend':'Verify'}</button>`}</div>
+            ${c.emailV?`<span class="vok">✓ Verified</span>`:`<button type="button" class="btn ghost vbtn" onclick="corpSendEmail()">${(c.emailOtp||c.emailLinkSent)?'Resend':'Verify'}</button>`}</div>
+          ${(c.emailLinkSent&&!c.emailV)?`<div class="vhint" style="margin-top:6px">✉️ We've emailed a secure sign-in link to <b>${esc(c.email||'')}</b>. Open it on this device to finish verifying — this page will update automatically.</div>`:''}
           ${(c.emailOtp&&!c.emailV)?`<div class="vrow" style="margin-top:6px"><input id="c_email_code" inputmode="numeric" maxlength="6" placeholder="6-digit email code">${c.emailDev?`<span class="vhint">demo ${esc(c.emailDev)}</span>`:''}<button type="button" class="btn green vbtn" onclick="corpConfirmEmail()">Confirm</button></div>`:''}
           ${c.emailV?`<button type="button" class="vlink" onclick="corpEdit('email')">Change email</button>`:''}
           ${c.emailMsg?`<div class="verr">${esc(c.emailMsg)}</div>`:''}
@@ -761,7 +796,7 @@ function repairCard(o){const k=S.kyc||{};let qc=[];try{qc=JSON.parse(k.qc||'[]')
   const items=['Device powers on & boots','Reported issue resolved','No new physical damage','Buttons, ports, camera & audio tested','Accessories returned to customer'];
   return `<div class="thread"><div class="thread-h">Repair QC &amp; handover ${k.consent?'<span class="badge2 darkgreen">customer accepted</span>':''}</div>
     <div style="margin:2px 0 6px;color:var(--ink-soft);font-size:12.5px">Quality checks performed after repair:</div>
-    <div class="qcwrap">${items.map(it=>`<label class="qcitem"><input type="checkbox" data-qc value="${esc(it)}" ${qc.includes(it)?'checked':''}> ${esc(it)}</label>`).join('')}</div>
+    <div class="qcwrap" style="display:flex;flex-direction:column;gap:8px">${items.map(it=>`<label class="qcitem" style="display:flex;align-items:flex-start;gap:9px;font-size:14px;cursor:pointer"><input type="checkbox" data-qc value="${esc(it)}" ${qc.includes(it)?'checked':''} style="margin-top:2px;width:17px;height:17px;flex:0 0 auto;accent-color:var(--green)"> <span>${esc(it)}</span></label>`).join('')}</div>
     <div class="kyc-grid" style="margin-top:10px"><label>Device serial / IMEI<input id="k_serial" value="${esc(k.serial||'')}" placeholder="serial / IMEI"></label></div>
     <label class="prefrow" style="margin-top:10px"><input type="checkbox" id="k_consent" ${k.consent?'checked':''}> Customer has checked the device and accepts the completed repair</label>
     <label class="fl" style="display:block;margin-top:6px;font-size:12px;color:var(--ink-soft)">Customer name</label>

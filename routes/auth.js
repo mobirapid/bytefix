@@ -91,6 +91,40 @@ router.post('/reset', (req, res) => {
   res.json({ ok: true });
 });
 
+// ---- Forgot password via Firebase email-link (no 6-digit code; Google delivers) ----
+// Step 1: client signs in with the email link, sends us the Firebase idToken; we
+// verify the email and, if it's an admin, mint a short-lived reset ticket.
+const fbResetTickets = new Map(); // ticket -> { email, expires }
+router.post('/forgot-firebase', async (req, res) => {
+  try {
+    const { verifyFirebaseEmail } = require('./otp');
+    const email = await verifyFirebaseEmail(req.body.idToken);
+    const u = adminByEmail(email);
+    if (!u || !permsOf(u.id).includes('admin_panel'))
+      return res.status(403).json({ error: 'This email is not an admin account.' });
+    const ticket = crypto.randomBytes(24).toString('hex');
+    fbResetTickets.set(ticket, { email, expires: Date.now() + 10 * 60000 });
+    res.json({ ok: true, ticket, email });
+  } catch (e) {
+    console.error('[auth forgot-firebase]', e.message);
+    res.status(401).json({ error: 'Could not verify email sign-in.' });
+  }
+});
+// Step 2: set the new password using the reset ticket from step 1.
+router.post('/reset-firebase', (req, res) => {
+  const ticket = String(req.body.ticket || '');
+  const password = String(req.body.password || '');
+  if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters.' });
+  const rec = fbResetTickets.get(ticket);
+  if (!rec || Date.now() > rec.expires) { fbResetTickets.delete(ticket); return res.status(400).json({ error: 'Reset session expired — verify your email again.' }); }
+  const u = adminByEmail(rec.email);
+  if (!u || !permsOf(u.id).includes('admin_panel')) { fbResetTickets.delete(ticket); return res.status(400).json({ error: 'Account not found.' }); }
+  db.prepare('UPDATE users SET password=?, token=NULL WHERE id=?').run(pw.hash(password), u.id);
+  fbResetTickets.delete(ticket);
+  record({ actor_id: u.id, actor_name: u.name || u.username, actor_role: permsOf(u.id).join(','), action: 'PASSWORD_RESET (firebase)', ip: req.ip || '' });
+  res.json({ ok: true });
+});
+
 // Protects admin-panel write routes — requires the admin_panel permission.
 function requireAdmin(req, res, next) {
   const u = userFromToken(req);

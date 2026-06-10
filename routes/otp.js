@@ -139,7 +139,9 @@ function firebaseProjectId() {
   } catch (e) {}
   return process.env.FIREBASE_PROJECT_ID || '';
 }
-async function verifyFirebaseToken(idToken) {
+// Verifies a Firebase ID token's signature/claims and returns the full payload.
+// Used for both phone and email (passwordless email-link) sign-in.
+async function verifyFirebasePayload(idToken) {
   const pid = firebaseProjectId();
   if (!pid) throw new Error('Firebase not configured');
   const parts = String(idToken || '').split('.');
@@ -156,8 +158,19 @@ async function verifyFirebaseToken(idToken) {
   if (payload.aud !== pid) throw new Error('Wrong audience');
   if (payload.iss !== 'https://securetoken.google.com/' + pid) throw new Error('Wrong issuer');
   if (payload.exp < now) throw new Error('Token expired');
+  return payload;
+}
+async function verifyFirebaseToken(idToken) {
+  const payload = await verifyFirebasePayload(idToken);
   if (!payload.phone_number) throw new Error('No phone number in token');
   return payload.phone_number;
+}
+// Returns the verified email from a Firebase email-link sign-in token.
+async function verifyFirebaseEmail(idToken) {
+  const payload = await verifyFirebasePayload(idToken);
+  const email = String(payload.email || '').trim().toLowerCase();
+  if (!email || !payload.email_verified) throw new Error('Email not verified in token');
+  return email;
 }
 
 // POST /api/otp/firebase { idToken } -> { verified, token, phone }
@@ -213,6 +226,19 @@ router.post('/email/verify', (req, res) => {
   emailTokens.set(token, { email, expires: Date.now() + 15 * 60000 });
   res.json({ verified: true, token });
 });
+// Firebase email-link verification → issue the same kind of email token the
+// 6-digit flow does, so downstream consumers (B2B form) don't need to change.
+router.post('/email/firebase', async (req, res) => {
+  try {
+    const email = await verifyFirebaseEmail(req.body.idToken);
+    const token = crypto.randomBytes(16).toString('hex');
+    emailTokens.set(token, { email, expires: Date.now() + 15 * 60000 });
+    res.json({ verified: true, token, email });
+  } catch (e) {
+    console.error('[OTP email firebase]', e.message);
+    res.status(401).json({ error: 'Could not verify email sign-in.' });
+  }
+});
 function verifyEmailToken(token, email) {
   const t = emailTokens.get(token);
   if (!t) return false;
@@ -235,4 +261,4 @@ function phoneForToken(token) {
   return t.phone;
 }
 
-module.exports = { router, verifyBooking, phoneForToken, verifyCode, verifyEmailToken, sendOtp };
+module.exports = { router, verifyBooking, phoneForToken, verifyCode, verifyEmailToken, sendOtp, verifyFirebaseEmail };
