@@ -77,19 +77,16 @@ async function sendReset(){
   const email=document.getElementById('fe').value.trim();const m=document.getElementById('fmsg');
   if(!email){m.textContent='Enter your admin email.';return;}
   await adminSettings();
-  if(fbEmailEnabled()){
-    m.textContent='Sending secure link…';
-    try{
-      await loadFirebase();
-      localStorage.setItem('regear_admin_reset_email',email);
-      const acs={url:location.origin+'/admin?emaillink=adminreset',handleCodeInApp:true};
-      await _fbAuth.sendSignInLinkToEmail(email,acs);
-      renderLinkSent(email);
-    }catch(e){m.textContent=e.message||'Could not send the link.';}
-    return;
-  }
-  try{await fetch(API+'/auth/forgot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});
-    renderReset(email);}catch(e){m.textContent='Could not reach server.';}
+  const c=fbConfig();
+  if(!(c&&c.apiKey&&c.projectId)){m.textContent='Reset-by-email isn’t set up yet. Add your Firebase config in Settings, or sign in with your existing password.';return;}
+  m.textContent='Sending secure link…';
+  try{
+    await loadFirebase();
+    localStorage.setItem('regear_admin_reset_email',email);
+    const acs={url:location.origin+'/admin?emaillink=adminreset',handleCodeInApp:true};
+    await _fbAuth.sendSignInLinkToEmail(email,acs);
+    renderLinkSent(email);
+  }catch(e){m.textContent=e.message||'Could not send the link.';}
 }
 function renderLinkSent(email){
   document.getElementById('root').innerHTML=`<div class="login"><div class="box">
@@ -101,7 +98,7 @@ function renderLinkSent(email){
 // Returned from a Firebase email link → verify, then show set-new-password.
 async function handleAdminEmailLink(){
   await adminSettings();
-  if(!fbEmailEnabled())return false;
+  const c=fbConfig();if(!(c&&c.apiKey&&c.projectId))return false;
   try{await loadFirebase();}catch(e){return false;}
   if(!_fbAuth.isSignInWithEmailLink(location.href))return false;
   let email=localStorage.getItem('regear_admin_reset_email')||'';

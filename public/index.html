@@ -134,7 +134,7 @@ async function sendEmailLink(email,kind){
 }
 // On load: if we returned from an email link, complete sign-in and restore state.
 async function handleEmailLinkReturn(){
-  if(!fbEmailEnabled())return false;
+  const _c=fbConfig();if(!(_c&&_c.apiKey&&_c.projectId))return false;
   let auth;try{await loadFirebase();auth=_fbAuth;}catch(e){return false;}
   if(!auth.isSignInWithEmailLink(location.href))return false;
   const kind=localStorage.getItem('regear_emaillink')||'';
@@ -491,9 +491,10 @@ function corpCapture(){S.corp=S.corp||{};const g=id=>{const e=document.getElemen
 function corpEdit(kind){S.corp=S.corp||{};S.corp[kind+'V']=false;S.corp[kind+'Token']=null;S.corp[kind+'Otp']=false;S.corp[kind+'Msg']='';showCorporate();}
 function setCorpIntent(i){corpCapture();corpIntent=i;showCorporate();}
 async function corpSendEmail(){corpCapture();const email=(S.corp.email||'').trim();if(!isWorkEmail(email)){S.corp.emailMsg=workEmailReason(email);showCorporate();return;}S.corp.emailMsg='';
-  if(fbEmailEnabled()){try{localStorage.setItem('regear_corp',JSON.stringify(S.corp));await sendEmailLink(email,'corp');S.corp.emailLinkSent=true;S.corp.emailOtp=false;showCorporate();}catch(e){S.corp.emailMsg=e.message||'Could not send the link right now.';showCorporate();}return;}
-  try{const r=await api('/otp/email/send',{method:'POST',body:JSON.stringify({email})});S.corp.emailOtp=true;S.corp.emailDev=r.dev_code||'';showCorporate();}catch(e){S.corp.emailMsg=e.message;showCorporate();}}
-async function corpConfirmEmail(){corpCapture();const code=(document.getElementById('c_email_code')||{}).value||'';try{const r=await api('/otp/email/verify',{method:'POST',body:JSON.stringify({email:S.corp.email,code})});S.corp.emailToken=r.token;S.corp.emailV=true;S.corp.emailOtp=false;S.corp.emailMsg='';showCorporate();}catch(e){S.corp.emailMsg=e.message;showCorporate();}}
+  const c=fbConfig();
+  if(!(c&&c.apiKey&&c.projectId)){S.corp.emailMsg='Email verification isn’t set up yet. Please reach us directly and we’ll help.';showCorporate();return;}
+  try{localStorage.setItem('regear_corp',JSON.stringify(S.corp));await sendEmailLink(email,'corp');S.corp.emailLinkSent=true;showCorporate();}
+  catch(e){S.corp.emailMsg=e.message||'Could not send the verification link right now.';showCorporate();}}
 async function corpSendPhone(){corpCapture();const digits=(S.corp.phone||'').replace(/\D/g,'');if(digits.length<10){S.corp.phoneMsg='Enter a valid 10-digit number';showCorporate();return;}S.corp.phoneMsg='';try{const r=await api('/otp/send',{method:'POST',body:JSON.stringify({phone:S.corp.phone})});S.corp.phoneOtp=true;S.corp.phoneDev=r.dev_code||'';showCorporate();}catch(e){S.corp.phoneMsg=e.message;showCorporate();}}
 async function corpConfirmPhone(){corpCapture();const code=(document.getElementById('c_phone_code')||{}).value||'';try{const r=await api('/otp/verify',{method:'POST',body:JSON.stringify({phone:S.corp.phone,code})});S.corp.phoneToken=r.token;S.corp.phoneV=true;S.corp.phoneOtp=false;S.corp.phoneMsg='';showCorporate();}catch(e){S.corp.phoneMsg=e.message;showCorporate();}}
 function corporateHTML(){
@@ -514,9 +515,8 @@ function corporateHTML(){
         <div class="field" style="margin-top:0"><label>Contact person</label><input id="c_name" placeholder="Your name" value="${esc(c.name||'')}"></div>
         <div class="field full" style="margin-top:0"><label>Work email *</label>
           <div class="vrow"><input id="c_email" type="email" placeholder="you@company.com" value="${esc(c.email||'')}" ${c.emailV?'disabled':''}>
-            ${c.emailV?`<span class="vok">✓ Verified</span>`:`<button type="button" class="btn ghost vbtn" onclick="corpSendEmail()">${(c.emailOtp||c.emailLinkSent)?'Resend':'Verify'}</button>`}</div>
-          ${(c.emailLinkSent&&!c.emailV)?`<div class="vhint" style="margin-top:6px">✉️ We've emailed a secure sign-in link to <b>${esc(c.email||'')}</b>. Open it on this device to finish verifying — this page will update automatically.</div>`:''}
-          ${(c.emailOtp&&!c.emailV)?`<div class="vrow" style="margin-top:6px"><input id="c_email_code" inputmode="numeric" maxlength="6" placeholder="6-digit email code">${c.emailDev?`<span class="vhint">demo ${esc(c.emailDev)}</span>`:''}<button type="button" class="btn green vbtn" onclick="corpConfirmEmail()">Confirm</button></div>`:''}
+            ${c.emailV?`<span class="vok">✓ Verified</span>`:`<button type="button" class="btn ghost vbtn" onclick="corpSendEmail()">${c.emailLinkSent?'Resend link':'Verify'}</button>`}</div>
+          ${(c.emailLinkSent&&!c.emailV)?`<div class="vhint" style="margin-top:6px">✉️ We've emailed a secure verification link to <b>${esc(c.email||'')}</b>. Open it on this device to confirm your email — this page updates automatically. Check spam if you don't see it.</div>`:''}
           ${c.emailV?`<button type="button" class="vlink" onclick="corpEdit('email')">Change email</button>`:''}
           ${c.emailMsg?`<div class="verr">${esc(c.emailMsg)}</div>`:''}
         </div>
