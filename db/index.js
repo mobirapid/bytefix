@@ -313,6 +313,15 @@ db.tx = (fn) => { db.exec('BEGIN'); try { const r = fn(); db.exec('COMMIT'); ret
     'Refund & Cancellation Policy\n\nYou may cancel a booking before service begins at no charge. Repair charges are payable only after you approve the final quote. Resale payments are made after the device is verified at pickup. Refunds, where applicable, are processed to the original payment method within 5–7 business days.' + PLACEHOLDER);
   setIf.run('policy_shipping',
     'Shipping & Pickup Policy\n\nWe offer free pickup and drop in serviceable cities at the slot you choose. Timelines are estimates and may vary with location and device condition. Please keep the device and any agreed accessories ready at pickup.' + PLACEHOLDER);
+
+  // 7) Default ByteFix Firebase web config + email-link verification, and live
+  //    site URL / theme. INSERT OR IGNORE → never overrides anything edited in
+  //    Admin → Settings. (A Firebase web apiKey is public by design; security is
+  //    enforced by Authorized domains + Firebase rules, not by hiding this key.)
+  setIf.run('firebase_config', '{"apiKey":"AIzaSyBetcYAbS8Zkb3nKbPt66aQ6eVDk4B57bs","authDomain":"bytefix-499bf.firebaseapp.com","projectId":"bytefix-499bf","storageBucket":"bytefix-499bf.firebasestorage.app","messagingSenderId":"1081636331151","appId":"1:1081636331151:web:7a989d4532967927cb5afa","measurementId":"G-J3783ZL3EH"}');
+  setIf.run('otp_email_firebase', '1');
+  setIf.run('site_url', 'https://bytefix.in');
+  setIf.run('theme_color', '#14315C');
 })();
 
 module.exports = db;
