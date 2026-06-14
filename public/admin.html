@@ -13,7 +13,7 @@
 <script>
 const API='/api';
 let TOKEN=localStorage.getItem('regear_token')||'';
-let tab='overview', adminCat=null, adminModel=null, data={}, commsTab='repair', commsStatus=null, accessQ='', accessTimer=null, showCities=false, auditQ='', auditTimer=null;
+let tab='overview', adminCat=null, adminModel=null, data={}, commsTab='repair', commsStatus=null, accessQ='', accessTimer=null, showCities=false, auditQ='', auditTimer=null, admPhone='', admConfirm=null;
 const INR=n=>'₹'+Number(Math.round(n||0)).toLocaleString('en-IN');
 const esc=s=>String(s==null?'':s).replace(/"/g,'&quot;').replace(/</g,'&lt;');
 const catIco=x=>(x&&(x.emoji||'').startsWith('data:'))?'<img src="'+x.emoji+'" alt="" style="height:16px;width:auto;vertical-align:-3px;border-radius:3px">':((x&&x.emoji)||'');
@@ -51,17 +51,67 @@ const PAGES={
   settings:['Settings','Store configuration','⚙'],
 };
 
-/* ---------- LOGIN ---------- */
+/* ---------- LOGIN (superadmin — phone OTP only) ---------- */
 function renderLogin(msg){
   document.getElementById('root').innerHTML=`<div class="login"><div class="box">
     <div class="brand"><span class="dot"></span><div><b>ReGear</b><small>Admin console</small></div></div>
-    <div class="card2"><h2>Sign in</h2><p>Manage catalog, pricing & orders</p>
-      <label>Email</label><input id="le" value="admin@regear.in">
-      <label>Password</label><input id="lp" type="password" value="admin123" onkeydown="if(event.key==='Enter')doLogin()">
-      <button class="btn ink" style="width:100%;margin-top:20px" onclick="doLogin()">Sign in</button>
+    <div class="card2"><h2>Sign in</h2><p>Superadmin access — we'll text a one-time code</p>
+      <label>Mobile number</label><input id="lphone" inputmode="tel" placeholder="10-digit mobile" value="${esc(admPhone||'')}" onkeydown="if(event.key==='Enter')adminSendOtp()">
+      <button class="btn ink" id="lbtn" style="width:100%;margin-top:20px" onclick="adminSendOtp()">Send OTP</button>
       ${msg?`<p style="color:var(--amber);margin-top:13px;font-size:13px">${msg}</p>`:''}
-      <div class="hint"><a style="color:var(--green-bright);cursor:pointer;font-weight:600" onclick="renderForgot()">Forgot password?</a></div>
     </div></div></div>`;
+}
+function fbPhoneEnabled(){const c=fbConfig();return ADMSET&&ADMSET.otp_firebase==='1'&&c&&c.apiKey&&c.projectId;}
+async function adminSendOtp(){
+  const phone=(document.getElementById('lphone').value||'').trim();
+  if(phone.replace(/\D/g,'').length<10){renderLogin('Enter a valid 10-digit mobile number');return;}
+  admPhone=phone;
+  const btn=document.getElementById('lbtn');if(btn){btn.textContent='Sending…';btn.disabled=true;}
+  try{
+    await adminSettings();
+    let dev='';
+    if(fbPhoneEnabled()){
+      await loadFirebase();
+      if(!document.getElementById('adm-recaptcha')){const d=document.createElement('div');d.id='adm-recaptcha';document.body.appendChild(d);}
+      if(!window._admVerifier)window._admVerifier=new firebase.auth.RecaptchaVerifier('adm-recaptcha',{size:'invisible'});
+      admConfirm=await _fbAuth.signInWithPhoneNumber('+91'+phone.replace(/\D/g,'').slice(-10),window._admVerifier);
+    }else{
+      const r=await fetch(API+'/otp/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone})}).then(x=>x.json());
+      if(r.error)throw new Error(r.error); dev=r.dev_code||'';
+    }
+    renderAdminOtp(phone,dev);
+  }catch(e){renderLogin(e.message||'Could not send the code right now');}
+}
+function renderAdminOtp(phone,dev,msg){
+  document.getElementById('root').innerHTML=`<div class="login"><div class="box">
+    <div class="brand"><span class="dot"></span><div><b>ReGear</b><small>Admin console</small></div></div>
+    <div class="card2"><h2>Enter code</h2><p>Sent to <b>${esc(phone)}</b></p>
+      ${dev?`<p style="color:var(--green-bright);font-size:13px;margin:0 0 6px">Demo code: <b>${esc(dev)}</b></p>`:''}
+      <label>One-time code</label><input id="lcode" inputmode="numeric" maxlength="6" placeholder="––––––" style="letter-spacing:6px" onkeydown="if(event.key==='Enter')adminVerifyOtp()">
+      <button class="btn ink" id="lvbtn" style="width:100%;margin-top:16px" onclick="adminVerifyOtp()">Verify &amp; sign in</button>
+      ${msg?`<p style="color:var(--amber);margin-top:12px;font-size:13px">${msg}</p>`:''}
+      <div class="hint"><a style="color:var(--green-bright);cursor:pointer;font-weight:600" onclick="renderLogin()">← Use a different number</a></div>
+    </div></div></div>`;
+}
+async function adminVerifyOtp(){
+  const code=(document.getElementById('lcode').value||'').trim();
+  if(code.length<4){renderAdminOtp(admPhone,'','Enter the code from your SMS');return;}
+  const btn=document.getElementById('lvbtn');if(btn){btn.textContent='Verifying…';btn.disabled=true;}
+  try{
+    let v;
+    if(fbPhoneEnabled()){
+      if(!admConfirm)throw new Error('Request a code first');
+      const cred=await admConfirm.confirm(code);const idToken=await cred.user.getIdToken();
+      v=await fetch(API+'/otp/firebase',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({idToken})}).then(x=>x.json());
+    }else{
+      v=await fetch(API+'/otp/verify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone:admPhone,code})}).then(x=>x.json());
+    }
+    if(v.error)throw new Error(v.error);
+    const r=await fetch(API+'/auth/login-phone',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:v.token,phone:admPhone})});
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.error||'Could not sign in');
+    TOKEN=d.token;localStorage.setItem('regear_token',TOKEN);tab='overview';boot();
+  }catch(e){renderAdminOtp(admPhone,'',e.message||'Verification failed');}
 }
 function renderForgot(prefill){
   document.getElementById('root').innerHTML=`<div class="login"><div class="box">
@@ -150,13 +200,6 @@ async function doReset(email){
     const d=await r.json();if(!r.ok){m.textContent=d.error||'Could not reset.';return;}
     renderLogin('Password updated — sign in with your new password.');
   }catch(e){m.textContent='Could not reach server.';}
-}
-async function doLogin(){
-  try{
-    const r=await fetch(API+'/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:document.getElementById('le').value,password:document.getElementById('lp').value})});
-    if(!r.ok){renderLogin('Invalid email or password');return;}
-    const d=await r.json();TOKEN=d.token;localStorage.setItem('regear_token',TOKEN);tab='overview';boot();
-  }catch(e){renderLogin('Could not reach server. Run npm start.');}
 }
 function logout(){TOKEN='';localStorage.removeItem('regear_token');renderLogin();}
 

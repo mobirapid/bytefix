@@ -8,7 +8,8 @@
   "scripts": {
     "start": "node --experimental-sqlite server.js",
     "seed": "node --experimental-sqlite db/seed.js",
-    "reset": "rm -f db/regear.db db/regear.db-wal db/regear.db-shm && node --experimental-sqlite db/seed.js && echo 'DB reset + seeded'"
+    "reset": "rm -f db/regear.db db/regear.db-wal db/regear.db-shm && node --experimental-sqlite db/seed.js && echo 'DB reset + seeded'",
+    "set-admin-phone": "node --experimental-sqlite scripts/set-admin-phone.js"
   },
   "dependencies": {
     "express": "^4.21.2"

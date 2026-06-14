@@ -26,26 +26,13 @@ function userFromToken(req) {
   return t ? db.prepare('SELECT * FROM users WHERE token=?').get(t) : null;
 }
 
-// POST /api/auth/login  { email, password } -> { token } for the ADMIN panel.
-// Authenticates a unified user (by username or email) that holds the admin_panel
-// permission (i.e. a superadmin). Tokens live on users.token.
+// POST /api/auth/login — DISABLED. Superadmin sign-in is now phone-OTP only
+// (see /login-phone below). Kept as an explicit, audited rejection so old
+// default credentials can't be used via the API either. Operators are
+// unaffected — they sign in via /api/account/staff-login.
 router.post('/login', (req, res) => {
-  const { email, password } = req.body || {};
-  const id = String(email || '').trim();
-  if (!id || !password) return res.status(400).json({ error: 'Email and password are required' });
-  const ip = req.ip || req.socket.remoteAddress || '';
-  if (loginLimited(ip + '|' + id.toLowerCase())) return res.status(429).json({ error: 'Too many attempts. Please try again later.' });
-  const u = db.prepare('SELECT * FROM users WHERE (username=? OR lower(email)=lower(?)) AND password IS NOT NULL').get(id, id);
-  if (!u || !pw.verify(password, u.password)) { record({ action: 'LOGIN_FAILED', detail: 'id=' + id, ip }); return res.status(401).json({ error: 'Invalid email or password' }); }
-  if (!permsOf(u.id).includes('admin_panel')) {
-    record({ actor_id: u.id, actor_name: u.name || u.username, actor_role: rolesOf(u.id).join(','), action: 'LOGIN_DENIED (no admin access)', ip });
-    return res.status(403).json({ error: 'This account does not have admin access.' });
-  }
-  if (!pw.isHashed(u.password)) db.prepare('UPDATE users SET password=? WHERE id=?').run(pw.hash(password), u.id); // upgrade legacy plaintext
-  const token = newToken();
-  db.prepare('UPDATE users SET token=? WHERE id=?').run(token, u.id);
-  record({ actor_id: u.id, actor_name: u.name || u.username, actor_role: rolesOf(u.id).join(','), action: 'LOGIN', ip });
-  res.json({ token, email: u.email || u.username, name: u.name, roles: rolesOf(u.id) });
+  record({ action: 'LOGIN_BLOCKED (password login disabled)', detail: 'id=' + String((req.body || {}).email || '').trim(), ip: req.ip || '' });
+  return res.status(410).json({ error: 'Password login is disabled. Admin sign-in is via phone OTP.' });
 });
 
 // ---- Forgot password (admin): email an OTP, then reset ----
@@ -123,6 +110,29 @@ router.post('/reset-firebase', (req, res) => {
   fbResetTickets.delete(ticket);
   record({ actor_id: u.id, actor_name: u.name || u.username, actor_role: permsOf(u.id).join(','), action: 'PASSWORD_RESET (firebase)', ip: req.ip || '' });
   res.json({ ok: true });
+});
+
+// ---- Admin login via phone OTP (superadmin). The phone must belong to a user
+// that holds admin_panel. The OTP itself is verified by the shared /otp layer
+// (Firebase phone / 2Factor SMS / demo) which mints the booking token we check. ----
+const digits10 = p => String(p || '').replace(/\D/g, '').slice(-10);
+router.post('/login-phone', (req, res) => {
+  const { token, phone } = req.body || {};
+  const ip = req.ip || req.socket.remoteAddress || '';
+  const { verifyBooking } = require('./otp');
+  if (!verifyBooking(token, phone)) return res.status(401).json({ error: 'Phone not verified. Please request an OTP first.' });
+  const want = digits10(phone);
+  if (want.length < 10) return res.status(400).json({ error: 'Enter a valid mobile number.' });
+  const u = db.prepare('SELECT * FROM users').all()
+    .find(x => digits10(x.phone) === want && permsOf(x.id).includes('admin_panel'));
+  if (!u) {
+    record({ action: 'ADMIN_PHONE_LOGIN_DENIED', detail: 'phone=' + want, ip });
+    return res.status(403).json({ error: 'This number is not registered to an admin account.' });
+  }
+  const t = newToken();
+  db.prepare('UPDATE users SET token=? WHERE id=?').run(t, u.id);
+  record({ actor_id: u.id, actor_name: u.name || u.username, actor_role: rolesOf(u.id).join(','), action: 'LOGIN (phone OTP)', ip });
+  res.json({ token: t, email: u.email || u.username, name: u.name, roles: rolesOf(u.id) });
 });
 
 // Protects admin-panel write routes — requires the admin_panel permission.
