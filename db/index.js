@@ -326,6 +326,7 @@ db.tx = (fn) => { db.exec('BEGIN'); try { const r = fn(); db.exec('COMMIT'); ret
   setIfEmpty('otp_email_firebase', '1');
   setIfEmpty('site_url', 'https://bytefix.in');
   setIfEmpty('theme_color', '#14315C');
+  setIfEmpty('ga4_id', 'G-KGV1XQ6YD3');   // Google Analytics 4 — gtag injected site-wide by routes/seo.js
 })();
 
 module.exports = db;
